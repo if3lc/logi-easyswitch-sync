@@ -1,0 +1,284 @@
+diff --git a/src/cleverswitch/gateway/hid_gateway.py b/src/cleverswitch/gateway/hid_gateway.py
+index 88a9c79..4a1b059 100644
+--- a/src/cleverswitch/gateway/hid_gateway.py
++++ b/src/cleverswitch/gateway/hid_gateway.py
+@@ -22,8 +22,23 @@ _FIRST_CONNECT_GRACE = 2.0
+ 
+ # Reconnect backoff. A device parked on another host used to make every disconnected gateway
+ # re-enumerate once per second forever (issue #108 logged ~894 sweeps over 94 minutes).
++#
++# The cap is deliberately short. After an Easy-Switch round trip the device is back on this host
++# within a couple of seconds, and until the gateway has re-opened the collection every write to it
++# — including the CHANGE_HOST relay for the mouse — is dropped. With a 30 s cap a press that landed
++# shortly after the devices came back relayed only the keyboard (issue #121: "slow to re-arm").
++# The discovery loop already calls hid_enumerate twice a second, so a 2 s cap adds no real load.
+ _RECONNECT_BACKOFF_MIN = 1.0
+-_RECONNECT_BACKOFF_MAX = 30.0
++_RECONNECT_BACKOFF_MAX = 2.0
++
++# A write that arrives while the gateway is between connections is parked instead of dropped, and
++# flushed by the reader thread right after the next successful (re)connect. Only the most recent
++# write is kept: in practice the only traffic to a disconnected device is the CHANGE_HOST relay, and
++# the user's last press is their intent — replaying an older one would bounce the mouse away again.
++# A parked write older than the TTL is discarded at flush time so a stale CHANGE_HOST never fires on
++# a connect that happens much later. The TTL covers HID re-open plus the BLE notify subscription
++# (_BLE_SUBSCRIBE_GRACE in hid_gateway_ble.py) that the reconnect waits for before flushing.
++_DEFERRED_WRITE_TTL = 5.0
+ 
+ # How long close() waits for the reader thread to tear down its own handle. Must comfortably
+ # exceed HIDTransport._READ_POLL_MS.
+@@ -44,9 +59,14 @@ class HidGateway(Thread, Subscriber):
+         self._ever_connected: bool = False
+         self._grace_deadline = time.monotonic() + _FIRST_CONNECT_GRACE
+         self._stop = threading.Event()
++        # Set to cut a backoff wait short: a parked write wants the reconnect attempt now, not
++        # when the current sleep runs out. close() sets it too so run() exits promptly.
++        self._wake = threading.Event()
+         self._transport: HIDTransport | None = None
+         self._event_listener: EventListener = event_listener
+         self._backoff: float = _RECONNECT_BACKOFF_MIN
++        self._deferred_lock = threading.Lock()
++        self._deferred: tuple[float, bytes] | None = None  # (expires_at, hid_message)
+ 
+     @property
+     def _connected(self) -> bool:
+@@ -105,12 +125,14 @@ class HidGateway(Thread, Subscriber):
+                 self._transport.try_reopen()
+             self._set_connected(True)
+             self._backoff = _RECONNECT_BACKOFF_MIN
++            self._flush_deferred()
+         except OSError as e:
+             log.debug(f"Failed to connect to HID device pid=0x{self._device_info.pid:04X}: {e}")
+             self._backoff_wait()
+ 
+     def _backoff_wait(self) -> None:
+-        self._stop.wait(self._backoff)
++        self._wake.wait(self._backoff)
++        self._wake.clear()
+         self._backoff = min(self._backoff * 2, _RECONNECT_BACKOFF_MAX)
+ 
+     def _close_transport(self) -> None:
+@@ -130,19 +152,48 @@ class HidGateway(Thread, Subscriber):
+         if event.pid != self._device_info.pid:
+             return
+ 
+-        if not self._connected:
+-            grace = max(0.0, self._grace_deadline - time.monotonic())
+-            if self._ever_connected or not self._connected_signal.wait(grace):
+-                log.debug(f"Dropping write to pid=0x{self._device_info.pid:04X}: device disconnected")
+-                return
+-
+         if _IS_WINDOWS:
+             expected = _USAGE_TO_REPORT_ID.get(self._device_info.usage)
+             if expected is None or event.hid_message[0] != expected:
+                 return
+ 
++        if not self._connected:
++            if self._ever_connected:
++                self._defer_write(event.hid_message)
++                return
++            grace = max(0.0, self._grace_deadline - time.monotonic())
++            if not self._connected_signal.wait(grace):
++                log.debug(f"Dropping write to pid=0x{self._device_info.pid:04X}: device disconnected")
++                return
++
+         self._write(event.hid_message)
+ 
++    def _defer_write(self, msg: bytes) -> None:
++        """Park a write for a device that is between connections and poke the reconnect loop.
++
++        Runs on the write topic's drain thread, so it must not block: the reader thread flushes
++        the parked messages from _try_connect once the collection is open again.
++        """
++        with self._deferred_lock:
++            self._deferred = (time.monotonic() + _DEFERRED_WRITE_TTL, msg)
++        log.info(
++            f"pid=0x{self._device_info.pid:04X} not connected yet — holding write for up to "
++            f"{_DEFERRED_WRITE_TTL:.0f}s until it reconnects"
++        )
++        self._wake.set()
++
++    def _flush_deferred(self) -> None:
++        with self._deferred_lock:
++            pending, self._deferred = self._deferred, None
++        if pending is None:
++            return
++        expires_at, msg = pending
++        if expires_at < time.monotonic():
++            log.debug(f"Discarding expired deferred write to pid=0x{self._device_info.pid:04X}: {msg.hex()}")
++            return
++        log.info(f"pid=0x{self._device_info.pid:04X} reconnected — sending held write")
++        self._write(msg)
++
+     def _write(self, msg: bytes) -> None:
+         # Snapshot the transport: _try_connect can null it between this check and the write,
+         # and the resulting AttributeError is not a TransportError, so it would kill this thread.
+@@ -162,6 +213,7 @@ class HidGateway(Thread, Subscriber):
+ 
+     def close(self):
+         self._stop.set()
++        self._wake.set()
+         if threading.current_thread() is self:
+             return  # run()'s finally closes the handle on the way out
+         if self.is_alive():
+diff --git a/tests/cleverswitch/gateway/test_hid_gateway.py b/tests/cleverswitch/gateway/test_hid_gateway.py
+index f9ce3c8..ac151ff 100644
+--- a/tests/cleverswitch/gateway/test_hid_gateway.py
++++ b/tests/cleverswitch/gateway/test_hid_gateway.py
+@@ -9,7 +9,11 @@ from unittest.mock import MagicMock
+ from cleverswitch.errors.errors import TransportError
+ from cleverswitch.event.transport_disconnected_event import TransportDisconnectedEvent
+ from cleverswitch.event.write_event import WriteEvent
+-from cleverswitch.gateway.hid_gateway import _RECONNECT_BACKOFF_MAX, _RECONNECT_BACKOFF_MIN, HidGateway
++from cleverswitch.gateway.hid_gateway import (
++    _RECONNECT_BACKOFF_MAX,
++    _RECONNECT_BACKOFF_MIN,
++    HidGateway,
++)
+ from cleverswitch.gateway.hid_gateway_bt import HidGatewayBT
+ from cleverswitch.hidpp.constants import BOLT_PID, REPORT_LONG
+ from cleverswitch.hidpp.transport import HidDeviceInfo
+@@ -376,19 +380,19 @@ def test_backoff_grows_while_device_absent(mocker):
+     gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
+     mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
+     waits: list[float] = []
+-    mocker.patch.object(gw._stop, "wait", side_effect=lambda t: waits.append(t))
++    mocker.patch.object(gw._wake, "wait", side_effect=lambda t: waits.append(t))
+ 
+     for _ in range(3):
+         gw._try_connect()
+ 
+-    assert waits == [1.0, 2.0, 4.0]
++    assert waits == [1.0, 2.0, 2.0]
+ 
+ 
+ def test_backoff_is_capped(mocker):
+     gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
+     mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
+     waits: list[float] = []
+-    mocker.patch.object(gw._stop, "wait", side_effect=lambda t: waits.append(t))
++    mocker.patch.object(gw._wake, "wait", side_effect=lambda t: waits.append(t))
+ 
+     for _ in range(20):
+         gw._try_connect()
+@@ -414,3 +418,120 @@ def test_backoff_resets_after_successful_connect(mocker):
+     gw._try_connect()
+ 
+     assert gw._backoff == _RECONNECT_BACKOFF_MIN
++
++
++# ── Deferred writes across a reconnect (issue #121) ─────────────────────────
++
++
++def test_backoff_cap_covers_an_easy_switch_round_trip():
++    """A device that left for another host is back within a couple of seconds; the gateway must
++    notice before the user presses Easy-Switch again, or the mouse relay is dropped."""
++    assert _RECONNECT_BACKOFF_MAX <= 2.0
++
++
++def test_notify_defers_write_when_disconnected_and_was_previously_connected():
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._connected = False
++    gw._ever_connected = True
++    gw._transport = MagicMock()
++    msg = bytes([REPORT_LONG]) + bytes(19)
++
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=msg))
++
++    gw._transport.write.assert_not_called()
++    assert gw._deferred[1] == msg
++    assert gw._wake.is_set(), "a parked write must cut the reconnect backoff short"
++
++
++def test_notify_does_not_block_drain_thread_when_deferring():
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._connected = False
++    gw._ever_connected = True
++    gw._transport = MagicMock()
++
++    started = time.monotonic()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=b"\x11" + bytes(19)))
++
++    assert time.monotonic() - started < 0.5
++
++
++def test_try_connect_flushes_deferred_writes_after_reconnect(mocker):
++    info = _device_info()
++    gw = HidGateway(info, MagicMock(spec=EventListener))
++    gw._ever_connected = True
++    transport = MagicMock()
++    gw._transport = transport
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={info.pid: [info]})
++    msg = bytes([REPORT_LONG]) + bytes(19)
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=msg))
++    transport.write.assert_not_called()
++
++    gw._try_connect()
++
++    transport.try_reopen.assert_called_once()
++    transport.write.assert_called_once_with(msg)
++    assert gw._deferred is None
++
++
++def test_flush_discards_expired_deferred_writes(mocker):
++    info = _device_info()
++    gw = HidGateway(info, MagicMock(spec=EventListener))
++    gw._ever_connected = True
++    transport = MagicMock()
++    gw._transport = transport
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={info.pid: [info]})
++    gw._deferred = (time.monotonic() - 0.1, b"\x11" + bytes(19))
++
++    gw._try_connect()
++
++    transport.write.assert_not_called()
++    assert gw._deferred is None
++
++
++def test_latest_deferred_write_wins():
++    """Two presses while the mouse is away must not replay both: the last one is the user's intent."""
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._connected = False
++    gw._ever_connected = True
++
++    for i in range(3):
++        gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=bytes([REPORT_LONG, i]) + bytes(18)))
++
++    assert gw._deferred[1][1] == 2
++
++
++def test_flush_with_nothing_deferred_is_a_noop(mocker):
++    info = _device_info()
++    gw = HidGateway(info, MagicMock(spec=EventListener))
++    transport = MagicMock()
++    gw._transport = transport
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={info.pid: [info]})
++
++    gw._try_connect()
++
++    transport.write.assert_not_called()
++
++
++def test_backoff_wait_is_cut_short_by_wake():
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._backoff = 5.0
++    gw._wake.set()
++
++    started = time.monotonic()
++    gw._backoff_wait()
++
++    assert time.monotonic() - started < 1.0
++    assert not gw._wake.is_set()
++
++
++def test_close_wakes_a_gateway_parked_in_backoff(mocker):
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._transport = None
++    gw._backoff = 5.0
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
++
++    gw.start()
++    time.sleep(0.05)
++    gw.close()
++
++    assert not gw.is_alive()
