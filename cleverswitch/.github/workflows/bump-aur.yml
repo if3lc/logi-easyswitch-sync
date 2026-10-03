@@ -1,0 +1,77 @@
+name: Publish AUR package
+
+# When a non-prerelease GitHub release is published, clone the AUR package repo
+# (the source of truth for the packaging files), bump it to the new tag,
+# recompute checksums, regenerate .SRCINFO, and push back to the AUR so
+# `yay -Syu` / `paru -Syu` picks it up.
+#
+# One-time prerequisite: the `cleverswitch` AUR repo must already contain the
+# PKGBUILD, .install, and .service (manual initial import). This workflow only
+# maintains an existing package; it does not create it.
+on:
+  release:
+    types: [released]
+
+jobs:
+  aur:
+    name: Publish AUR package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed git openssh curl pacman-contrib
+
+      - name: Create build user
+        # makepkg / updpkgsums refuse to run as root.
+        run: useradd -m builder
+
+      - name: Configure SSH for the AUR
+        run: |
+          install -d -m 700 -o builder -g builder /home/builder/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/id_ed25519
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org > /home/builder/.ssh/known_hosts 2>/dev/null
+          cat > /home/builder/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+          EOF
+          chmod 600 /home/builder/.ssh/id_ed25519
+          chown -R builder:builder /home/builder/.ssh
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+      - name: Bump version and push to the AUR
+        run: |
+          cat > /home/builder/update.sh <<'SCRIPT'
+          #!/bin/bash
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          git clone ssh://aur@aur.archlinux.org/cleverswitch.git
+          cd cleverswitch
+          version="${TAG#v}"
+          echo "Updating AUR package to ${version}"
+          sed -i -E "s/^pkgver=.*/pkgver=${version}/" PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/"          PKGBUILD
+          updpkgsums                                  # refresh sha256sums from the new tarball
+          makepkg --printsrcinfo > .SRCINFO
+          if git diff --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+          git config user.name  "$AUR_USERNAME"
+          git config user.email "$AUR_EMAIL"
+          git commit -am "Update to ${TAG}"
+          git push origin master
+          SCRIPT
+          chmod +x /home/builder/update.sh
+          chown builder:builder /home/builder/update.sh
+          sudo -H -u builder env \
+            TAG="$TAG" \
+            AUR_USERNAME="$AUR_USERNAME" \
+            AUR_EMAIL="$AUR_EMAIL" \
+            /home/builder/update.sh
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
