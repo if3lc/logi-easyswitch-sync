@@ -1,0 +1,451 @@
+04:45:47  CleverSwitch 1.5.4 starting
+04:45:47  ENUM  present=['0xb023', '0xb35b']
+04:45:47  Opened bluetooth path=b'\\\\?\\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b023_REV&0015_f776e3c60742&Col03#d&d7b48aa&0&0002#{4d1e55
+04:45:47  Writing to pid=0xB023: 11ff000918140000000000000000000000000000
+04:45:47  Opened bluetooth path=b'\\\\?\\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b35b_REV&0013_d61ca0d3d088&Col04#d&1c9859be&0&0003#{4d1e5
+04:45:47  Writing to pid=0xB35B: 11ff000918140000000000000000000000000000
+04:45:47  Writing to pid=0xB023: 11ff000a00050000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff000e00070000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff032c00000000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff030d00000000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff070f00000000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff031d00000000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff071f00000000000000000000000000000000
+04:45:48  Writing to pid=0xB023: 11ff031d10000000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff000a00050000000000000000000000000000
+04:45:48  Device fully discovered: 'MX Master 3': transport=BT, pid=0xb023, wpid=0xb023
+04:45:48  Writing to pid=0xB35B: 11ff000e00070000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff032c00000000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff030d00000000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff060f00000000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff00081b040000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff031d00000000000000000000000000000000
+04:45:48  Writing to pid=0xB35B: 11ff061f00000000000000000000000000000000
+04:45:49  Writing to pid=0xB35B: 11ff080b00000000000000000000000000000000
+04:45:49  Writing to pid=0xB35B: 11ff031d10000000000000000000000000000000
+04:45:49  Writing to pid=0xB35B: 11ff081b00000000000000000000000000000000
+04:45:49  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:45:49  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:45:49  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:45:49  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:45:49  Device fully discovered: 'MX Keys': transport=BT, pid=0xb35b, wpid=0xb35b
+04:45:49  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:45:49  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:46:17  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:46:17  Sending host change to 'MX Master 3' -> host 1
+04:46:17  Sending host change to 'MX Keys' -> host 1
+04:46:17  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:46:17  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:46:17  Write failed for pid=0xB35B, marking disconnected
+04:46:17  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:46:18  Device disconnected pid=0xB35B
+04:46:18  'MX Keys' disconnected
+04:46:18  ENUM  present=['0xb023']
+04:46:18  Device disconnected pid=0xB023
+04:46:18  'MX Master 3' disconnected
+04:46:19  ENUM  present=[]
+04:46:30  ENUM  present=['0xb35b']
+04:46:33  'MX Keys' reconnected
+04:46:33  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:46:33  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:46:33  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:46:33  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:46:33  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:46:33  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:46:48  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=1)
+04:46:48  Sending host change to 'MX Master 3' -> host 2
+04:46:48  Sending host change to 'MX Keys' -> host 2
+04:46:48  Dropping write to pid=0xB023: device disconnected
+04:46:48  Writing to pid=0xB35B: 11ff091f01000000000000000000000000000000
+04:46:50  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:46:50  Sending host change to 'MX Master 3' -> host 1
+04:46:50  Sending host change to 'MX Keys' -> host 1
+04:46:50  Dropping write to pid=0xB023: device disconnected
+04:46:50  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:46:50  Write failed for pid=0xB35B, marking disconnected
+04:46:50  Device disconnected pid=0xB35B
+04:46:50  'MX Keys' disconnected
+04:46:50  ENUM  present=[]
+04:46:53  'MX Keys' reconnected
+04:46:53  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:46:53  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:46:53  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:46:53  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:46:53  ENUM  present=['0xb35b']
+04:46:53  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:46:53  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:46:59  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:46:59  Sending host change to 'MX Master 3' -> host 1
+04:46:59  Sending host change to 'MX Keys' -> host 1
+04:46:59  Dropping write to pid=0xB023: device disconnected
+04:46:59  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:47:00  Device disconnected pid=0xB35B
+04:47:00  'MX Keys' disconnected
+04:47:00  ENUM  present=[]
+04:47:05  ENUM  present=['0xb35b']
+04:47:07  'MX Keys' reconnected
+04:47:07  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:47:07  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:47:07  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:47:07  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:47:07  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:47:07  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:47:14  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:47:14  Sending host change to 'MX Master 3' -> host 1
+04:47:14  Sending host change to 'MX Keys' -> host 1
+04:47:14  Dropping write to pid=0xB023: device disconnected
+04:47:14  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:47:14  Write failed for pid=0xB35B, marking disconnected
+04:47:15  Device disconnected pid=0xB35B
+04:47:15  'MX Keys' disconnected
+04:47:15  ENUM  present=[]
+04:47:33  ENUM  present=['0xb35b']
+04:47:39  ENUM  present=[]
+04:48:28  ENUM  present=['0xb35b']
+04:48:29  ENUM  present=['0xb023', '0xb35b']
+04:48:46  'MX Keys' reconnected
+04:48:46  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:48:46  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:48:46  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:48:46  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:48:46  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:48:46  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:48:49  'MX Master 3' reconnected
+04:49:00  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:49:00  Sending host change to 'MX Master 3' -> host 1
+04:49:00  Sending host change to 'MX Keys' -> host 1
+04:49:00  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:49:00  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:49:00  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:49:00  Device disconnected pid=0xB023
+04:49:00  'MX Master 3' disconnected
+04:49:00  Write failed for pid=0xB35B, marking disconnected
+04:49:00  ENUM  present=['0xb35b']
+04:49:01  Device disconnected pid=0xB35B
+04:49:01  'MX Keys' disconnected
+04:49:01  ENUM  present=[]
+04:49:13  ENUM  present=['0xb35b']
+04:49:16  'MX Keys' reconnected
+04:49:16  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:49:16  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:49:16  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:49:16  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:49:16  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:49:16  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:49:28  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=1)
+04:49:28  Sending host change to 'MX Master 3' -> host 2
+04:49:28  Sending host change to 'MX Keys' -> host 2
+04:49:28  Dropping write to pid=0xB023: device disconnected
+04:49:28  Writing to pid=0xB35B: 11ff091f01000000000000000000000000000000
+04:49:36  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:49:36  Sending host change to 'MX Master 3' -> host 1
+04:49:36  Sending host change to 'MX Keys' -> host 1
+04:49:36  Dropping write to pid=0xB023: device disconnected
+04:49:36  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:49:36  Write failed for pid=0xB35B, marking disconnected
+04:49:36  Device disconnected pid=0xB35B
+04:49:36  'MX Keys' disconnected
+04:49:36  ENUM  present=[]
+04:49:43  ENUM  present=['0xb35b']
+04:49:43  'MX Keys' reconnected
+04:49:43  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:49:43  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:49:43  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:49:43  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:49:43  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:49:43  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:49:50  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:49:50  Sending host change to 'MX Master 3' -> host 1
+04:49:50  Sending host change to 'MX Keys' -> host 1
+04:49:50  Dropping write to pid=0xB023: device disconnected
+04:49:50  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:49:51  Device disconnected pid=0xB35B
+04:49:51  'MX Keys' disconnected
+04:49:51  ENUM  present=[]
+04:49:55  ENUM  present=['0xb35b']
+04:49:58  'MX Keys' reconnected
+04:49:58  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:49:58  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:49:58  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:49:58  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:49:58  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:49:58  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:50:02  ENUM  present=['0xb023', '0xb35b']
+04:50:31  'MX Master 3' reconnected
+04:51:39  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:51:39  Sending host change to 'MX Master 3' -> host 1
+04:51:39  Sending host change to 'MX Keys' -> host 1
+04:51:39  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:51:39  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:51:39  Write failed for pid=0xB35B, marking disconnected
+04:51:39  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:51:39  Device disconnected pid=0xB35B
+04:51:39  'MX Keys' disconnected
+04:51:40  ENUM  present=['0xb023']
+04:51:40  Device disconnected pid=0xB023
+04:51:40  'MX Master 3' disconnected
+04:51:40  ENUM  present=[]
+04:53:01  ENUM  present=['0xb023', '0xb35b']
+04:53:11  'MX Keys' reconnected
+04:53:11  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:53:11  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:53:11  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:53:11  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:53:11  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:53:11  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:53:11  'MX Master 3' reconnected
+04:53:45  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+04:53:45  Sending host change to 'MX Master 3' -> host 1
+04:53:45  Sending host change to 'MX Keys' -> host 1
+04:53:45  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:53:45  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+04:53:45  Write failed for pid=0xB35B, marking disconnected
+04:53:45  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+04:53:45  Device disconnected pid=0xB35B
+04:53:45  'MX Keys' disconnected
+04:53:46  ENUM  present=['0xb023']
+04:53:46  Device disconnected pid=0xB023
+04:53:46  'MX Master 3' disconnected
+04:53:46  ENUM  present=[]
+04:55:02  ENUM  present=['0xb35b']
+04:55:11  ENUM  present=[]
+04:55:26  ENUM  present=['0xb35b']
+04:55:27  ENUM  present=['0xb023', '0xb35b']
+04:55:46  'MX Keys' reconnected
+04:55:46  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+04:55:46  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+04:55:46  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+04:55:46  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+04:55:47  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+04:55:47  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+04:55:47  'MX Master 3' reconnected
+06:25:34  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+06:25:34  Sending host change to 'MX Master 3' -> host 1
+06:25:34  Sending host change to 'MX Keys' -> host 1
+06:25:34  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+06:25:34  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+06:25:34  Write failed for pid=0xB35B, marking disconnected
+06:25:34  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+06:25:34  Device disconnected pid=0xB35B
+06:25:34  'MX Keys' disconnected
+06:25:34  ENUM  present=['0xb023']
+06:25:35  Device disconnected pid=0xB023
+06:25:35  'MX Master 3' disconnected
+06:25:35  ENUM  present=[]
+06:27:44  ENUM  present=['0xb35b']
+06:27:45  ENUM  present=['0xb023', '0xb35b']
+06:28:05  'MX Keys' reconnected
+06:28:05  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+06:28:05  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+06:28:05  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+06:28:05  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+06:28:06  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+06:28:06  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+06:28:06  'MX Master 3' reconnected
+06:34:41  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+06:34:41  Sending host change to 'MX Master 3' -> host 1
+06:34:41  Sending host change to 'MX Keys' -> host 1
+06:34:41  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+06:34:41  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+06:34:41  Write failed for pid=0xB35B, marking disconnected
+06:34:41  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+06:34:41  Device disconnected pid=0xB35B
+06:34:41  'MX Keys' disconnected
+06:34:42  ENUM  present=['0xb023']
+06:34:42  Device disconnected pid=0xB023
+06:34:42  'MX Master 3' disconnected
+06:34:42  ENUM  present=[]
+06:38:05  ENUM  present=['0xb35b']
+06:38:05  ENUM  present=['0xb023', '0xb35b']
+06:38:12  'MX Keys' reconnected
+06:38:12  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+06:38:12  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+06:38:12  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+06:38:12  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+06:38:13  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+06:38:13  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+06:38:13  'MX Master 3' reconnected
+07:45:00  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+07:45:00  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+07:45:00  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+07:45:00  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+07:45:01  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+07:45:01  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+10:08:08  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+10:08:08  Sending host change to 'MX Master 3' -> host 1
+10:08:08  Sending host change to 'MX Keys' -> host 1
+10:08:08  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+10:08:08  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+10:08:08  Write failed for pid=0xB35B, marking disconnected
+10:08:08  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+10:08:08  Device disconnected pid=0xB35B
+10:08:08  'MX Keys' disconnected
+10:08:09  ENUM  present=['0xb023']
+10:08:09  Device disconnected pid=0xB023
+10:08:09  'MX Master 3' disconnected
+10:08:09  ENUM  present=[]
+10:08:37  ENUM  present=['0xb35b']
+10:08:39  'MX Keys' reconnected
+10:08:39  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+10:08:39  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+10:08:39  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+10:08:39  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+10:08:39  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+10:08:39  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+10:08:46  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+10:08:46  Sending host change to 'MX Master 3' -> host 1
+10:08:46  Sending host change to 'MX Keys' -> host 1
+10:08:46  Dropping write to pid=0xB023: device disconnected
+10:08:46  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+10:08:46  Device disconnected pid=0xB35B
+10:08:46  'MX Keys' disconnected
+10:08:47  ENUM  present=[]
+10:08:55  ENUM  present=['0xb35b']
+10:08:55  ENUM  present=['0xb023', '0xb35b']
+10:09:01  'MX Keys' reconnected
+10:09:01  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+10:09:01  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+10:09:01  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+10:09:01  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+10:09:01  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+10:09:01  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+10:09:07  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+10:09:07  Sending host change to 'MX Master 3' -> host 1
+10:09:07  Sending host change to 'MX Keys' -> host 1
+10:09:07  Dropping write to pid=0xB023: device disconnected
+10:09:07  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+10:09:08  Device disconnected pid=0xB35B
+10:09:08  'MX Keys' disconnected
+10:09:08  ENUM  present=['0xb023']
+10:09:10  'MX Master 3' reconnected
+10:09:17  ENUM  present=['0xb023', '0xb35b']
+10:09:23  'MX Keys' reconnected
+10:09:23  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+10:09:23  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+10:09:23  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+10:09:23  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+10:09:23  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+10:09:23  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+10:09:25  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+10:09:25  Sending host change to 'MX Master 3' -> host 1
+10:09:25  Sending host change to 'MX Keys' -> host 1
+10:09:25  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+10:09:25  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+10:09:25  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+10:09:25  Write failed for pid=0xB35B, marking disconnected
+10:09:26  Device disconnected pid=0xB35B
+10:09:26  'MX Keys' disconnected
+10:09:26  ENUM  present=['0xb023']
+10:09:26  Device disconnected pid=0xB023
+10:09:26  'MX Master 3' disconnected
+10:09:27  ENUM  present=[]
+10:22:04  ENUM  present=['0xb35b']
+10:22:05  ENUM  present=['0xb023', '0xb35b']
+10:22:27  'MX Keys' reconnected
+10:22:27  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+10:22:27  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+10:22:27  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+10:22:27  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+10:22:28  'MX Master 3' reconnected
+10:22:28  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+10:22:28  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+12:14:21  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+12:14:21  Sending host change to 'MX Master 3' -> host 1
+12:14:21  Sending host change to 'MX Keys' -> host 1
+12:14:21  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:14:21  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+12:14:21  Write failed for pid=0xB35B, marking disconnected
+12:14:21  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:14:22  Device disconnected pid=0xB35B
+12:14:22  'MX Keys' disconnected
+12:14:22  ENUM  present=['0xb023']
+12:14:22  Device disconnected pid=0xB023
+12:14:22  'MX Master 3' disconnected
+12:14:22  ENUM  present=[]
+12:16:22  ENUM  present=['0xb35b']
+12:16:23  'MX Keys' reconnected
+12:16:23  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+12:16:23  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+12:16:23  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+12:16:23  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+12:16:23  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+12:16:23  ENUM  present=['0xb023', '0xb35b']
+12:16:23  'MX Master 3' reconnected
+12:16:23  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+12:43:46  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+12:43:46  Sending host change to 'MX Master 3' -> host 1
+12:43:46  Sending host change to 'MX Keys' -> host 1
+12:43:46  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:43:46  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+12:43:46  Write failed for pid=0xB35B, marking disconnected
+12:43:46  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:43:47  Device disconnected pid=0xB35B
+12:43:47  'MX Keys' disconnected
+12:43:47  ENUM  present=['0xb023']
+12:43:47  Device disconnected pid=0xB023
+12:43:47  'MX Master 3' disconnected
+12:43:48  ENUM  present=[]
+12:49:18  ENUM  present=['0xb023', '0xb35b']
+12:49:18  'MX Master 3' reconnected
+12:49:48  'MX Keys' reconnected
+12:49:48  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+12:49:48  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+12:49:48  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+12:49:48  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+12:49:48  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+12:49:49  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+12:59:30  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+12:59:30  Sending host change to 'MX Master 3' -> host 1
+12:59:30  Sending host change to 'MX Keys' -> host 1
+12:59:30  Writing to pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:59:30  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+12:59:30  Received HID event from pid=0xB023: 11ff0a1f00000000000000000000000000000000
+12:59:31  Device disconnected pid=0xB023
+12:59:31  'MX Master 3' disconnected
+12:59:31  Write failed for pid=0xB35B, marking disconnected
+12:59:31  ENUM  present=['0xb35b']
+12:59:32  Device disconnected pid=0xB35B
+12:59:32  'MX Keys' disconnected
+12:59:32  ENUM  present=[]
+13:00:02  ENUM  present=['0xb35b']
+13:00:03  'MX Keys' reconnected
+13:00:03  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+13:00:03  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+13:00:03  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+13:00:03  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+13:00:03  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+13:00:03  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+13:00:11  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+13:00:11  Sending host change to 'MX Master 3' -> host 1
+13:00:11  Sending host change to 'MX Keys' -> host 1
+13:00:11  Dropping write to pid=0xB023: device disconnected
+13:00:11  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+13:00:12  Device disconnected pid=0xB35B
+13:00:12  'MX Keys' disconnected
+13:00:12  ENUM  present=[]
+13:00:18  ENUM  present=['0xb35b']
+13:00:19  'MX Keys' reconnected
+13:00:19  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+13:00:19  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+13:00:19  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+13:00:19  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+13:00:19  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+13:00:19  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+13:00:25  ENUM  present=['0xb023', '0xb35b']
+13:00:32  'MX Master 3' reconnected
+13:55:12  Device disconnected pid=0xB023
+13:55:12  'MX Master 3' disconnected
+13:55:12  ENUM  present=['0xb35b']
+15:18:55  Device disconnected pid=0xB35B
+15:18:55  'MX Keys' disconnected
+15:18:56  ENUM  present=[]
+17:01:49  ENUM  present=['0xb023']
+17:01:56  ENUM  present=['0xb023', '0xb35b']
+17:01:58  'MX Keys' reconnected
+17:01:58  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+17:01:58  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+17:01:58  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+17:01:58  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+17:01:58  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+17:01:58  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+17:02:16  'MX Master 3' reconnected

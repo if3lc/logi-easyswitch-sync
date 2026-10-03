@@ -1,0 +1,26 @@
+00:11:01  CleverSwitch 1.5.4 starting
+00:11:01  ENUM  present=[]
+00:12:42  ENUM  present=['0xb35b']
+00:12:42  Opened bluetooth path=b'\\\\?\\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b35b_REV&0013_d61ca0d3d088&Col04#d&1c9859be&0&0003#{4d1e5
+00:12:42  'MX Keys' reconnected
+00:12:42  Enabling analytics for CID 0x00D1 on wpid=0xB35B
+00:12:42  Enabling analytics for CID 0x00D2 on wpid=0xB35B
+00:12:42  Enabling analytics for CID 0x00D3 on wpid=0xB35B
+00:12:42  Writing to pid=0xB35B: 11ff083e00d10000000300000000000000000000
+00:12:42  Writing to pid=0xB35B: 11ff083e00d20000000300000000000000000000
+00:12:42  Writing to pid=0xB35B: 11ff083e00d30000000300000000000000000000
+00:12:48  ENUM  present=['0xb023', '0xb35b']
+00:12:48  Opened bluetooth path=b'\\\\?\\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b023_REV&0015_f776e3c60742&Col03#d&d7b48aa&0&0002#{4d1e55
+00:12:48  'MX Master 3' reconnected
+00:24:42  Device disconnected pid=0xB023
+00:24:42  'MX Master 3' disconnected
+00:24:42  ENUM  present=['0xb35b']
+00:24:44  Parsed event: HostChangeEvent(slot=255, pid=45915, target_host=0)
+00:24:44  Sending host change to 'MX Keys' -> host 1
+00:24:44  Sending host change to 'MX Master 3' -> host 1
+00:24:44  Writing to pid=0xB35B: 11ff091f00000000000000000000000000000000
+00:24:44  Dropping write to pid=0xB023: device disconnected
+00:24:44  Write failed for pid=0xB35B, marking disconnected
+00:24:44  Device disconnected pid=0xB35B
+00:24:44  'MX Keys' disconnected
+00:24:44  ENUM  present=[]

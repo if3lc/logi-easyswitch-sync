@@ -1,0 +1,897 @@
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ../b/src/cleverswitch/cli/cli_module.py
+--- a/src/cleverswitch/cli/cli_module.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/cli/cli_module.py	2026-10-04 00:30:52.147437700 +0300
+@@ -7,6 +7,8 @@
+ import platform
+ import sys
+ import threading
++from logging.handlers import RotatingFileHandler
++from pathlib import Path
+ 
+ from .. import __version__
+ from ..cache.device_cache import DeviceCache
+@@ -18,11 +20,18 @@
+ 
+ _SYSTEM = platform.system()
+ 
++_LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
++
+ 
+ def main() -> None:
+     args = _parse_args()
+ 
+-    _setup_logging(args.verbose or args.verbose_extra)
++    _setup_logging(
++        args.verbose or args.verbose_extra,
++        log_file=args.log_file,
++        log_max_mb=args.log_max_mb,
++        log_backups=args.log_backups,
++    )
+     log = logging.getLogger(__name__)
+ 
+     if args.clear_cache:
+@@ -60,6 +69,13 @@
+     p.add_argument("-v", "--verbose", action="store_true", help="force DEBUG logging")
+     p.add_argument("-vv", "--verbose-extra", action="store_true", help="force DEBUG logging including discovery")
+     p.add_argument("--clear-cache", action="store_true", help="delete the discovered-device cache and exit")
++    p.add_argument("--log-file", metavar="FILE", help="also write the log to FILE, rotated by size")
++    p.add_argument(
++        "--log-max-mb", type=int, default=10, metavar="N", help="rotate --log-file once it exceeds N MB (default: 10)"
++    )
++    p.add_argument(
++        "--log-backups", type=int, default=5, metavar="N", help="rotated copies of --log-file to keep (default: 5)"
++    )
+     p.add_argument(
+         "--version",
+         action="version",
+@@ -68,15 +84,29 @@
+     return p.parse_args()
+ 
+ 
+-def _setup_logging(verbose: bool) -> None:
++def _setup_logging(verbose: bool, log_file: str | None = None, log_max_mb: int = 10, log_backups: int = 5) -> None:
+     if verbose:
+         level = "DEBUG"
+     else:
+         level = "INFO"
+     logging.basicConfig(
+         level=getattr(logging, level, logging.INFO),
+-        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
++        format=_LOG_FORMAT,
+         datefmt="%H:%M:%S",
+     )
+     # Quiet down the hid library's own logger
+     logging.getLogger("hid").setLevel(logging.WARNING)
++    if log_file:
++        _add_rotating_file_handler(log_file, log_max_mb, log_backups)
++
++
++def _add_rotating_file_handler(log_file: str, max_mb: int, backups: int) -> None:
++    """Mirror the log into a size-rotated file so a headless daemon can run with -v/-vv indefinitely."""
++    path = Path(log_file).expanduser()
++    path.parent.mkdir(parents=True, exist_ok=True)
++    handler = RotatingFileHandler(
++        path, maxBytes=max(1, max_mb) * 1024 * 1024, backupCount=max(0, backups), encoding="utf-8"
++    )
++    # Dates matter in a file that spans days; the console format stays as it was.
++    handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
++    logging.getLogger().addHandler(handler)
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/discovery/discovery.py ../b/src/cleverswitch/discovery/discovery.py
+--- a/src/cleverswitch/discovery/discovery.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/discovery/discovery.py	2026-10-04 00:30:52.150439700 +0300
+@@ -63,6 +63,11 @@
+                         gateways[device.pid] = pid_gateways
+                         hid_gateway.start()
+                     event_listener.start()
++                else:
++                    # Known pid is enumerable again: interrupt any of its gateways parked in
++                    # reconnect backoff so the returning device is opened within one sweep.
++                    for hid_gateway in gateways[pid]:
++                        hid_gateway.wake()
+ 
+             shutdown.wait(0.5)
+         _undivert_all(app_context.device_registry, topics)
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/event/write_event.py ../b/src/cleverswitch/event/write_event.py
+--- a/src/cleverswitch/event/write_event.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/event/write_event.py	2026-10-04 00:30:52.109512600 +0300
+@@ -1,4 +1,5 @@
+ import dataclasses
++from collections.abc import Callable
+ 
+ from ..event.event import Event
+ 
+@@ -6,3 +7,9 @@
+ @dataclasses.dataclass
+ class WriteEvent(Event):
+     hid_message: bytes
++    # Seconds this write may wait for a disconnected gateway to reconnect before it is discarded.
++    # 0 (the default) keeps the original behaviour: a write to a disconnected device is dropped.
++    defer_ttl: float = 0.0
++    # Consulted right before a deferred write is finally sent; True means it has gone stale and
++    # must be discarded instead (e.g. the user has already switched back to this host).
++    discard_if: Callable[[], bool] | None = dataclasses.field(default=None, compare=False, repr=False)
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.py ../b/src/cleverswitch/gateway/hid_gateway.py
+--- a/src/cleverswitch/gateway/hid_gateway.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/gateway/hid_gateway.py	2026-10-04 00:30:52.125606300 +0300
+@@ -22,13 +22,22 @@
+ 
+ # Reconnect backoff. A device parked on another host used to make every disconnected gateway
+ # re-enumerate once per second forever (issue #108 logged ~894 sweeps over 94 minutes).
++# The backoff only governs the *absent* case: the discovery sweep calls wake() as soon as the pid
++# is enumerable again, so a returning device never has to wait out a backoff step. The cap is kept
++# low as a safety net — with the old 30 s cap a mouse coming back from the other host was opened up
++# to 29 s after it reappeared, and every Easy-Switch press inside that window left it behind.
+ _RECONNECT_BACKOFF_MIN = 1.0
+-_RECONNECT_BACKOFF_MAX = 30.0
++_RECONNECT_BACKOFF_MAX = 5.0
+ 
+ # How long close() waits for the reader thread to tear down its own handle. Must comfortably
+ # exceed HIDTransport._READ_POLL_MS.
+ _CLOSE_JOIN_TIMEOUT = 2.0
+ 
++# A deferred write is not sent the instant its gateway reconnects. If the user has meanwhile brought
++# everything back to this host, the source keyboard usually reconnects within a second of the peer;
++# waiting this long first lets the write's discard_if check see that and drop the stale command.
++_DEFERRED_FLUSH_GRACE = 1.0
++
+ _USAGE_TO_REPORT_ID = {
+     HIDPP_USAGE_SHORT: REPORT_SHORT,
+     HIDPP_USAGE_LONG: REPORT_LONG,
+@@ -47,6 +56,11 @@
+         self._transport: HIDTransport | None = None
+         self._event_listener: EventListener = event_listener
+         self._backoff: float = _RECONNECT_BACKOFF_MIN
++        self._wake = threading.Event()
++        # Newest deferred write and its monotonic deadline — see _defer / _flush_pending.
++        self._pending: tuple[WriteEvent, float] | None = None
++        self._pending_lock = threading.Lock()
++        self._flush_timer: threading.Timer | None = None
+ 
+     @property
+     def _connected(self) -> bool:
+@@ -105,12 +119,30 @@
+                 self._transport.try_reopen()
+             self._set_connected(True)
+             self._backoff = _RECONNECT_BACKOFF_MIN
++            self._wake.clear()
+         except OSError as e:
+             log.debug(f"Failed to connect to HID device pid=0x{self._device_info.pid:04X}: {e}")
+             self._backoff_wait()
+ 
++    def wake(self) -> None:
++        """Interrupt the reconnect backoff.
++
++        Called by the discovery sweep whenever this gateway's pid is enumerable while the gateway
++        is disconnected, so a device returning from the other host is opened within one sweep
++        period instead of after the current backoff step.
++        """
++        if not self._connected:
++            self._wake.set()
++
+     def _backoff_wait(self) -> None:
+-        self._stop.wait(self._backoff)
++        woke = self._wake.wait(self._backoff)
++        self._wake.clear()
++        if woke:
++            # Retry at once. The backoff step is left as is, so a device that is visible but
++            # refuses to open cannot retry faster than the sweep that wakes us.
++            if not self._stop.is_set():
++                log.debug(f"Reconnect wait interrupted for pid=0x{self._device_info.pid:04X}: device visible")
++            return
+         self._backoff = min(self._backoff * 2, _RECONNECT_BACKOFF_MAX)
+ 
+     def _close_transport(self) -> None:
+@@ -122,6 +154,8 @@
+         self._connected = state
+         if not self._ever_connected:
+             self._ever_connected = state
++        if state:
++            self._schedule_flush()
+ 
+     def notify(self, event) -> None:
+         if not isinstance(event, WriteEvent):
+@@ -130,17 +164,81 @@
+         if event.pid != self._device_info.pid:
+             return
+ 
++        if _IS_WINDOWS:
++            # Each report type is its own collection on Windows; only the matching collection may
++            # send, defer or drop this write.
++            expected = _USAGE_TO_REPORT_ID.get(self._device_info.usage)
++            if expected is None or event.hid_message[0] != expected:
++                return
++
+         if not self._connected:
+             grace = max(0.0, self._grace_deadline - time.monotonic())
+             if self._ever_connected or not self._connected_signal.wait(grace):
+-                log.debug(f"Dropping write to pid=0x{self._device_info.pid:04X}: device disconnected")
++                if event.defer_ttl > 0:
++                    self._defer(event)
++                else:
++                    log.debug(f"Dropping write to pid=0x{self._device_info.pid:04X}: device disconnected")
+                 return
+ 
+-        if _IS_WINDOWS:
+-            expected = _USAGE_TO_REPORT_ID.get(self._device_info.usage)
+-            if expected is None or event.hid_message[0] != expected:
+-                return
++        self._write(event.hid_message)
++
++    def _defer(self, event: WriteEvent) -> None:
++        """Park a write until the gateway reconnects, or until its TTL runs out.
+ 
++        Only the newest deferred write is kept: a later host change supersedes an earlier one, and
++        delivering both back to back would let the stale target win.
++        """
++        deadline = time.monotonic() + event.defer_ttl
++        with self._pending_lock:
++            self._pending = (event, deadline)
++        log.info(
++            f"Deferring write to pid=0x{self._device_info.pid:04X} for up to {event.defer_ttl:.1f}s: "
++            f"device disconnected"
++        )
++        # The gateway may have reconnected between the check in notify() and the store above;
++        # schedule the flush here rather than leave the write parked until a later reconnect.
++        if self._connected:
++            self._schedule_flush()
++
++    def _schedule_flush(self) -> None:
++        """Send the parked write after _DEFERRED_FLUSH_GRACE, on a timer thread."""
++        with self._pending_lock:
++            if self._pending is None:
++                return
++            if self._flush_timer is not None and self._flush_timer.is_alive():
++                return
++            timer = threading.Timer(_DEFERRED_FLUSH_GRACE, self._flush_pending)
++            timer.daemon = True
++            self._flush_timer = timer
++        log.info(
++            f"Device pid=0x{self._device_info.pid:04X} is back; deferred write goes out in "
++            f"{_DEFERRED_FLUSH_GRACE:.1f}s unless it turns stale"
++        )
++        timer.start()
++
++    def _flush_pending(self) -> None:
++        with self._pending_lock:
++            pending, self._pending = self._pending, None
++            self._flush_timer = None
++        if pending is None:
++            return
++        event, deadline = pending
++        remaining = deadline - time.monotonic()
++        pid = self._device_info.pid
++        if remaining <= 0:
++            log.info(f"Discarding deferred write to pid=0x{pid:04X}: expired {-remaining:.1f}s ago")
++            return
++        if event.discard_if is not None and event.discard_if():
++            log.info(f"Discarding deferred write to pid=0x{pid:04X}: stale, the source device is back on this host")
++            return
++        if not self._connected:
++            # Dropped again before the grace ran out; keep it for the next reconnect inside the TTL.
++            with self._pending_lock:
++                if self._pending is None:
++                    self._pending = pending
++            log.info(f"Deferred write to pid=0x{pid:04X} kept: device disconnected again before it was sent")
++            return
++        log.info(f"Sending deferred write to pid=0x{pid:04X} ({remaining:.1f}s before expiry)")
+         self._write(event.hid_message)
+ 
+     def _write(self, msg: bytes) -> None:
+@@ -162,6 +260,7 @@
+ 
+     def close(self):
+         self._stop.set()
++        self._wake.set()  # unblock a reader parked in _backoff_wait
+         if threading.current_thread() is self:
+             return  # run()'s finally closes the handle on the way out
+         if self.is_alive():
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/hidpp/transport.py ../b/src/cleverswitch/hidpp/transport.py
+--- a/src/cleverswitch/hidpp/transport.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/hidpp/transport.py	2026-10-04 00:30:52.120093100 +0300
+@@ -224,10 +224,29 @@
+     """Call hid_enumerate and return HID++ capable devices (receivers + BT), freeing the linked list."""
+     with _ENUM_LOCK:
+         result = _enumerate_locked(vendor_id, product_id)
+-    _log(f"All suitable hid devices={result}", verbose_extra)
++    if verbose_extra:
++        _log_enumeration_change(vendor_id, product_id, result)
+     return result
+ 
+ 
++# Last enumeration result logged, per filter. The discovery sweep enumerates twice a second; with
++# -vv that was ~1.3 KB per sweep (48 MB in 12 hours) of identical lines. Logging only transitions
++# keeps -vv usable as an always-on setting while still recording exactly when a device appeared or
++# vanished.
++_LAST_ENUM_LOGGED: dict[tuple[int, int], str] = {}
++_ENUM_LOG_LOCK = threading.Lock()
++
++
++def _log_enumeration_change(vendor_id: int, product_id: int, result: dict[int, list[HidDeviceInfo]]) -> None:
++    key = (vendor_id, product_id)
++    rendered = str(result)
++    with _ENUM_LOG_LOCK:
++        if _LAST_ENUM_LOGGED.get(key) == rendered:
++            return
++        _LAST_ENUM_LOGGED[key] = rendered
++    log.debug(f"All suitable hid devices={rendered}")
++
++
+ def _enumerate_locked(vendor_id: int, product_id: int) -> dict[int, list[HidDeviceInfo]]:
+     """Caller must hold _ENUM_LOCK — the walk dereferences nodes owned by the returned list."""
+     head = _lib.hid_enumerate(vendor_id, product_id)
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/subscriber/host_change_subscriber.py ../b/src/cleverswitch/subscriber/host_change_subscriber.py
+--- a/src/cleverswitch/subscriber/host_change_subscriber.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/subscriber/host_change_subscriber.py	2026-10-04 00:30:52.137860100 +0300
+@@ -14,6 +14,13 @@
+ 
+ log = logging.getLogger(__name__)
+ 
++# An Easy-Switch press often lands while the peer device is still re-linking to this host (it
++# trails the keyboard by 1–6 s in the logs), or while a sleeping mouse has dropped its link. A host
++# change for a peer that is not open is parked for this long and sent once its gateway reconnects —
++# unless the source keyboard is back on this host by then, which means the user has already
++# switched back and the parked command would only bounce the peer away again.
++HOST_CHANGE_DEFER_TTL = 10.0
++
+ 
+ class HostChangeSubscriber(Subscriber):
+     def __init__(self, device_registry: LogiDeviceRegistry, topics: Topics):
+@@ -25,7 +32,10 @@
+         if not isinstance(event, HostChangeEvent):
+             return
+ 
+-        for device in self._device_registry.all_entries():
++        devices = self._device_registry.all_entries()
++        source = next((d for d in devices if d.pid == event.pid and d.slot == event.slot), None)
++
++        for device in devices:
+             change_host_idx = device.available_features.get(FEATURE_CHANGE_HOST)
+             if change_host_idx is None:
+                 continue
+@@ -33,5 +43,24 @@
+             request_id = (change_host_idx << 8) | (CHANGE_HOST_FN_SET & 0xF0) | SW_ID_HOST_CHANGE
+             params = pack_params((event.target_host,))
+             msg = build_msg(device.slot, request_id, params)
+-            self._topics.write.publish(WriteEvent(slot=device.slot, pid=device.pid, hid_message=msg))
++            if device is source:
++                # The device that reported the press switches natively and is already leaving —
++                # never park a write for it, or a quick return trip would be bounced straight back.
++                write = WriteEvent(slot=device.slot, pid=device.pid, hid_message=msg)
++            else:
++                write = WriteEvent(
++                    slot=device.slot,
++                    pid=device.pid,
++                    hid_message=msg,
++                    defer_ttl=HOST_CHANGE_DEFER_TTL,
++                    discard_if=_source_is_back(source),
++                )
++            self._topics.write.publish(write)
+             log.info(f"Sending host change to '{device.display_name}' -> host {event.target_host + 1}")
++
++
++def _source_is_back(source):
++    """Stale check for a parked host change: the keyboard that asked for it is connected here again."""
++    if source is None:
++        return None
++    return lambda: source.connected
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/cli/test_cli_logfile.py ../b/tests/cleverswitch/cli/test_cli_logfile.py
+--- a/tests/cleverswitch/cli/test_cli_logfile.py	1970-01-01 03:00:00.000000000 +0300
++++ b/tests/cleverswitch/cli/test_cli_logfile.py	2026-10-04 00:30:52.201854500 +0300
+@@ -0,0 +1,59 @@
++"""--log-file: size-rotated log mirror for the headless daemon."""
++
++from __future__ import annotations
++
++import logging
++import sys
++from logging.handlers import RotatingFileHandler
++
++from cleverswitch.cli.cli_module import _parse_args, _setup_logging
++
++
++def test_parse_args_log_file_defaults(monkeypatch):
++    monkeypatch.setattr(sys, "argv", ["cleverswitch"])
++    args = _parse_args()
++    assert args.log_file is None
++    assert args.log_max_mb == 10
++    assert args.log_backups == 5
++
++
++def test_parse_args_log_file_options(monkeypatch):
++    monkeypatch.setattr(
++        sys, "argv", ["cleverswitch", "--log-file", "cs.log", "--log-max-mb", "2", "--log-backups", "1"]
++    )
++    args = _parse_args()
++    assert args.log_file == "cs.log"
++    assert args.log_max_mb == 2
++    assert args.log_backups == 1
++
++
++def test_setup_logging_without_log_file_adds_no_handler(mocker):
++    mocker.patch("cleverswitch.cli.cli_module.logging.basicConfig")
++    root = logging.getLogger()
++    before = list(root.handlers)
++
++    _setup_logging(verbose=True)
++
++    assert root.handlers == before
++
++
++def test_setup_logging_adds_rotating_file_handler_and_creates_parent_dir(tmp_path, mocker):
++    mocker.patch("cleverswitch.cli.cli_module.logging.basicConfig")
++    root = logging.getLogger()
++    before = list(root.handlers)
++    log_path = tmp_path / "logs" / "cleverswitch.log"
++
++    _setup_logging(verbose=True, log_file=str(log_path), log_max_mb=1, log_backups=2)
++
++    added = [handler for handler in root.handlers if handler not in before]
++    try:
++        assert len(added) == 1
++        handler = added[0]
++        assert isinstance(handler, RotatingFileHandler)
++        assert handler.maxBytes == 1024 * 1024
++        assert handler.backupCount == 2
++        assert log_path.parent.is_dir()
++    finally:
++        for handler in added:
++            root.removeHandler(handler)
++            handler.close()
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/discovery/test_discovery_wake.py ../b/tests/cleverswitch/discovery/test_discovery_wake.py
+--- a/tests/cleverswitch/discovery/test_discovery_wake.py	1970-01-01 03:00:00.000000000 +0300
++++ b/tests/cleverswitch/discovery/test_discovery_wake.py	2026-10-04 00:30:52.191372900 +0300
+@@ -0,0 +1,68 @@
++"""The discovery sweep wakes gateways whose pid is enumerable again."""
++
++from __future__ import annotations
++
++import threading
++from unittest.mock import MagicMock
++
++from cleverswitch.discovery.discovery import discover
++from cleverswitch.hidpp.transport import HidDeviceInfo
++from cleverswitch.model.context.app_context import AppContext
++from cleverswitch.registry.logi_device_registry import LogiDeviceRegistry
++from cleverswitch.topic.topic import Topic
++from cleverswitch.topic.topics import Topics
++
++
++def _make_app_context(shutdown):
++    topics = Topics(
++        hid_event=MagicMock(spec=Topic),
++        write=MagicMock(spec=Topic),
++        device_info=MagicMock(spec=Topic),
++        flags=MagicMock(spec=Topic),
++        info_progress=MagicMock(spec=Topic),
++    )
++    config = MagicMock()
++    config.arguments_settings.verbose_extra = False
++    return AppContext(device_registry=LogiDeviceRegistry(), topics=topics, config=config, shutdown=shutdown)
++
++
++def _bt_mouse():
++    return HidDeviceInfo(
++        path=b"/dev/hidraw1", vid=0x046D, pid=0xB023, usage_page=0xFF43, usage=0x0202, connection_type="bluetooth"
++    )
++
++
++def _run_sweeps(mocker, enumerations: list[dict], gateway) -> None:
++    """Run discover() once per entry of *enumerations*, then shut down."""
++    enum = mocker.patch("cleverswitch.discovery.discovery.enumerate_hid_devices", side_effect=enumerations)
++    mocker.patch("cleverswitch.discovery.discovery.HidGatewayBT", return_value=gateway)
++    mocker.patch("cleverswitch.discovery.discovery.EventListener")
++    mocker.patch("cleverswitch.discovery.discovery.get_system", return_value="Windows")
++
++    shutdown = threading.Event()
++
++    def fake_wait(timeout):
++        if enum.call_count >= len(enumerations):
++            shutdown.set()
++
++    shutdown.wait = fake_wait
++    discover(_make_app_context(shutdown))
++
++
++def test_known_pid_in_a_later_sweep_wakes_its_gateway_instead_of_creating_another(mocker):
++    gateway = mocker.MagicMock()
++    device = _bt_mouse()
++
++    _run_sweeps(mocker, [{0xB023: [device]}, {0xB023: [device]}], gateway)
++
++    assert gateway.start.call_count == 1
++    gateway.wake.assert_called_once()
++
++
++def test_absent_pid_does_not_wake_its_gateway(mocker):
++    gateway = mocker.MagicMock()
++    device = _bt_mouse()
++
++    _run_sweeps(mocker, [{0xB023: [device]}, {}], gateway)
++
++    gateway.wake.assert_not_called()
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway.py ../b/tests/cleverswitch/gateway/test_hid_gateway.py
+--- a/tests/cleverswitch/gateway/test_hid_gateway.py	2026-09-25 17:16:18.000000000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway.py	2026-10-04 00:30:52.196725000 +0300
+@@ -376,7 +376,7 @@
+     gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
+     mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
+     waits: list[float] = []
+-    mocker.patch.object(gw._stop, "wait", side_effect=lambda t: waits.append(t))
++    mocker.patch.object(gw._wake, "wait", side_effect=lambda t: waits.append(t))
+ 
+     for _ in range(3):
+         gw._try_connect()
+@@ -388,7 +388,7 @@
+     gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
+     mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
+     waits: list[float] = []
+-    mocker.patch.object(gw._stop, "wait", side_effect=lambda t: waits.append(t))
++    mocker.patch.object(gw._wake, "wait", side_effect=lambda t: waits.append(t))
+ 
+     for _ in range(20):
+         gw._try_connect()
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py ../b/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py
+--- a/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py	1970-01-01 03:00:00.000000000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py	2026-10-04 00:30:52.196725000 +0300
+@@ -0,0 +1,261 @@
++"""Reconnect wake-up and deferred-write behaviour layered on top of 1.5.4.
++
++Background: after an Easy-Switch round trip the gateway sat in an exponential backoff (1, 2, 4 … 30 s)
++and only noticed a returning device at the next step — up to 29 s after it was enumerable again. Every
++host change written to it in that window was dropped, so the mouse stayed behind.
++"""
++
++from __future__ import annotations
++
++import time
++from unittest.mock import MagicMock
++
++from cleverswitch.event.write_event import WriteEvent
++from cleverswitch.gateway.hid_gateway import _RECONNECT_BACKOFF_MAX, _RECONNECT_BACKOFF_MIN, HidGateway
++from cleverswitch.hidpp.constants import BOLT_PID, REPORT_LONG
++from cleverswitch.hidpp.transport import HidDeviceInfo
++from cleverswitch.listener.event_listener import EventListener
++
++MSG = bytes([REPORT_LONG]) + bytes(19)
++
++
++def _device_info(pid=BOLT_PID, usage=0x0002):
++    return HidDeviceInfo(
++        path=b"/dev/hidraw0", vid=0x046D, pid=pid, usage_page=0xFF00, usage=usage, connection_type="receiver"
++    )
++
++
++def _gateway(connected=False, ever_connected=True) -> HidGateway:
++    gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
++    gw._transport = MagicMock()
++    gw._connected = connected
++    gw._ever_connected = ever_connected
++    return gw
++
++
++def _reconnect_and_flush(gw: HidGateway) -> None:
++    """Reconnect, then wait for the grace timer so the flush has run (or confirm none was scheduled)."""
++    gw._set_connected(True)
++    timer = gw._flush_timer
++    if timer is not None:
++        timer.join(timeout=2.0)
++        assert not timer.is_alive(), "flush timer did not fire"
++
++
++# ── wake() ──────────────────────────────────────────────────────────────────
++
++
++def test_wake_sets_signal_only_while_disconnected():
++    gw = _gateway(connected=True)
++
++    gw.wake()
++    assert not gw._wake.is_set()
++
++    gw._connected = False
++    gw.wake()
++    assert gw._wake.is_set()
++
++
++def test_wake_interrupts_backoff_without_growing_the_step(mocker):
++    gw = _gateway()
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
++    gw._backoff = 4.0
++    gw.wake()
++
++    start = time.monotonic()
++    gw._try_connect()
++
++    assert time.monotonic() - start < 1.0, "a woken gateway must not sit out its backoff step"
++    assert gw._backoff == 4.0
++    assert not gw._wake.is_set(), "the wake signal is consumed by the wait"
++
++
++def test_backoff_still_grows_when_nothing_wakes_it(mocker):
++    gw = _gateway()
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
++    waits: list[float] = []
++
++    def timed_out(timeout):
++        waits.append(timeout)
++        return False
++
++    mocker.patch.object(gw._wake, "wait", side_effect=timed_out)
++
++    for _ in range(4):
++        gw._try_connect()
++
++    assert waits == [1.0, 2.0, 4.0, _RECONNECT_BACKOFF_MAX]
++
++
++def test_backoff_cap_is_a_few_seconds():
++    """The cap is only a safety net behind wake(); it must never again hide a device for half a minute."""
++    assert _RECONNECT_BACKOFF_MAX <= 5.0
++
++
++def test_successful_connect_clears_stale_wake_and_resets_backoff(mocker):
++    info = _device_info()
++    gw = HidGateway(info, MagicMock(spec=EventListener))
++    gw._backoff = 4.0
++    gw._wake.set()
++    mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={info.pid: [info]})
++    mocker.patch("cleverswitch.gateway.hid_gateway.HIDTransport")
++
++    gw._try_connect()
++
++    assert gw._connected
++    assert not gw._wake.is_set()
++    assert gw._backoff == _RECONNECT_BACKOFF_MIN
++
++
++def test_close_wakes_a_reader_parked_in_backoff():
++    gw = _gateway()
++
++    gw.close()
++
++    assert gw._stop.is_set()
++    assert gw._wake.is_set()
++
++
++# ── deferred writes ─────────────────────────────────────────────────────────
++
++
++def test_write_without_ttl_is_still_dropped_when_disconnected():
++    gw = _gateway()
++
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG))
++
++    assert gw._pending is None
++    gw._transport.write.assert_not_called()
++
++
++def test_write_with_ttl_is_parked_when_disconnected():
++    gw = _gateway()
++
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))
++
++    assert gw._pending is not None
++    assert gw._pending[0].hid_message == MSG
++    gw._transport.write.assert_not_called()
++
++
++def test_parked_write_is_sent_after_the_grace_once_reconnected(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.05)
++    gw = _gateway()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))
++
++    gw._set_connected(True)
++    gw._transport.write.assert_not_called()  # not before the grace
++    gw._flush_timer.join(timeout=2.0)
++
++    gw._transport.write.assert_called_once_with(MSG)
++    assert gw._pending is None
++
++
++def test_reconnect_without_parked_write_schedules_nothing():
++    gw = _gateway()
++
++    gw._set_connected(True)
++
++    assert gw._flush_timer is None
++
++
++def test_expired_parked_write_is_discarded_on_reconnect(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    gw._pending = (WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0), time.monotonic() - 0.1)
++
++    _reconnect_and_flush(gw)
++
++    gw._transport.write.assert_not_called()
++    assert gw._pending is None
++
++
++def test_parked_write_is_discarded_when_its_stale_check_fires(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0, discard_if=lambda: True))
++
++    _reconnect_and_flush(gw)
++
++    gw._transport.write.assert_not_called()
++    assert gw._pending is None
++
++
++def test_parked_write_is_sent_when_its_stale_check_is_clear(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0, discard_if=lambda: False))
++
++    _reconnect_and_flush(gw)
++
++    gw._transport.write.assert_called_once_with(MSG)
++
++
++def test_parked_write_is_kept_if_the_device_drops_again_during_the_grace(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))
++    gw._connected = True
++    gw._connected = False  # dropped again before the flush runs
++
++    gw._flush_pending()
++
++    gw._transport.write.assert_not_called()
++    assert gw._pending is not None, "still inside the TTL, so it waits for the next reconnect"
++
++
++def test_newest_parked_write_supersedes_the_older_one(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    to_host_1 = bytes([REPORT_LONG, 0xFF, 0x0A, 0x1F, 0x00]) + bytes(15)
++    to_host_2 = bytes([REPORT_LONG, 0xFF, 0x0A, 0x1F, 0x01]) + bytes(15)
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=to_host_1, defer_ttl=3.0))
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=to_host_2, defer_ttl=3.0))
++
++    _reconnect_and_flush(gw)
++
++    gw._transport.write.assert_called_once_with(to_host_2)
++
++
++def test_parked_write_schedules_its_own_flush_when_reconnect_raced_the_park(mocker):
++    mocker.patch("cleverswitch.gateway.hid_gateway._DEFERRED_FLUSH_GRACE", 0.0)
++    gw = _gateway()
++    real_defer = gw._defer
++
++    def connect_then_park(event):
++        gw._connected = True  # plain flag flip: the reconnect's own scheduling already ran and found nothing
++        real_defer(event)
++
++    mocker.patch.object(gw, "_defer", side_effect=connect_then_park)
++
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))
++    deadline = time.monotonic() + 2.0
++    while gw._transport.write.call_count == 0 and time.monotonic() < deadline:
++        time.sleep(0.01)
++
++    gw._transport.write.assert_called_once_with(MSG)
++    assert gw._pending is None
++
++
++def test_disconnect_does_not_flush_parked_write():
++    gw = _gateway()
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))
++
++    gw._set_connected(False)
++
++    gw._transport.write.assert_not_called()
++    assert gw._pending is not None
++
++
++def test_windows_report_filter_applies_before_parking(mocker):
++    """A collection that could never send this report must not park it either."""
++    mocker.patch("cleverswitch.gateway.hid_gateway._IS_WINDOWS", True)
++    gw = HidGateway(_device_info(usage=0x0001), MagicMock(spec=EventListener))  # short-report collection
++    gw._transport = MagicMock()
++    gw._connected = False
++    gw._ever_connected = True
++
++    gw.notify(WriteEvent(slot=1, pid=BOLT_PID, hid_message=MSG, defer_ttl=3.0))  # long report
++
++    assert gw._pending is None
++    gw._transport.write.assert_not_called()
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/subscriber/test_host_change_defer.py ../b/tests/cleverswitch/subscriber/test_host_change_defer.py
+--- a/tests/cleverswitch/subscriber/test_host_change_defer.py	1970-01-01 03:00:00.000000000 +0300
++++ b/tests/cleverswitch/subscriber/test_host_change_defer.py	2026-10-04 00:30:52.175223200 +0300
+@@ -0,0 +1,96 @@
++"""HostChangeSubscriber parks host changes for peers that are not open yet — never for the source."""
++
++from __future__ import annotations
++
++from unittest.mock import MagicMock
++
++from cleverswitch.event.host_change_event import HostChangeEvent
++from cleverswitch.event.write_event import WriteEvent
++from cleverswitch.hidpp.constants import BOLT_PID, FEATURE_CHANGE_HOST
++from cleverswitch.model.logi_device import LogiDevice
++from cleverswitch.registry.logi_device_registry import LogiDeviceRegistry
++from cleverswitch.subscriber.host_change_subscriber import HOST_CHANGE_DEFER_TTL, HostChangeSubscriber
++from cleverswitch.topic.topic import Topic
++from cleverswitch.topic.topics import Topics
++
++
++def _make_topics():
++    return Topics(
++        hid_event=MagicMock(spec=Topic),
++        write=MagicMock(spec=Topic),
++        device_info=MagicMock(spec=Topic),
++        flags=MagicMock(spec=Topic),
++        info_progress=MagicMock(spec=Topic),
++    )
++
++
++def _device(wpid, pid, slot, role):
++    return LogiDevice(wpid=wpid, pid=pid, slot=slot, role=role, available_features={FEATURE_CHANGE_HOST: 9}, name=role)
++
++
++def _published(topics) -> list[WriteEvent]:
++    return [call.args[0] for call in topics.write.publish.call_args_list]
++
++
++def test_receiver_devices_share_a_pid_so_the_source_is_told_apart_by_slot():
++    registry = LogiDeviceRegistry()
++    topics = _make_topics()
++    HostChangeSubscriber(registry, topics)
++    registry.register(0x407B, _device(0x407B, BOLT_PID, slot=1, role="keyboard"))
++    registry.register(0x4082, _device(0x4082, BOLT_PID, slot=2, role="mouse"))
++
++    topics.hid_event.subscribe.call_args.args[0].notify(HostChangeEvent(slot=1, pid=BOLT_PID, target_host=0))
++
++    by_slot = {event.slot: event for event in _published(topics)}
++    assert by_slot[1].defer_ttl == 0.0, "the keyboard that reported the press is already leaving"
++    assert by_slot[1].discard_if is None
++    assert by_slot[2].defer_ttl == HOST_CHANGE_DEFER_TTL
++    assert by_slot[2].discard_if is not None
++
++
++def test_bluetooth_devices_share_a_slot_so_the_source_is_told_apart_by_pid():
++    registry = LogiDeviceRegistry()
++    topics = _make_topics()
++    HostChangeSubscriber(registry, topics)
++    registry.register(0xB35B, _device(0xB35B, 0xB35B, slot=0xFF, role="keyboard"))
++    registry.register(0xB023, _device(0xB023, 0xB023, slot=0xFF, role="mouse"))
++
++    topics.hid_event.subscribe.call_args.args[0].notify(HostChangeEvent(slot=0xFF, pid=0xB35B, target_host=0))
++
++    by_pid = {event.pid: event for event in _published(topics)}
++    assert by_pid[0xB35B].defer_ttl == 0.0
++    assert by_pid[0xB023].defer_ttl == HOST_CHANGE_DEFER_TTL
++
++
++def test_parked_host_change_turns_stale_once_the_source_keyboard_is_back():
++    registry = LogiDeviceRegistry()
++    topics = _make_topics()
++    HostChangeSubscriber(registry, topics)
++    keyboard = _device(0xB35B, 0xB35B, slot=0xFF, role="keyboard")
++    registry.register(0xB35B, keyboard)
++    registry.register(0xB023, _device(0xB023, 0xB023, slot=0xFF, role="mouse"))
++
++    topics.hid_event.subscribe.call_args.args[0].notify(HostChangeEvent(slot=0xFF, pid=0xB35B, target_host=0))
++
++    mouse_write = {event.pid: event for event in _published(topics)}[0xB023]
++    keyboard.connected = False  # it left for the other host, as it does right after the press
++    assert mouse_write.discard_if() is False
++    keyboard.connected = True  # the user pressed the other host's key and it came back
++    assert mouse_write.discard_if() is True
++
++
++def test_unknown_source_yields_no_stale_check():
++    registry = LogiDeviceRegistry()
++    topics = _make_topics()
++    HostChangeSubscriber(registry, topics)
++    registry.register(0xB023, _device(0xB023, 0xB023, slot=0xFF, role="mouse"))
++
++    topics.hid_event.subscribe.call_args.args[0].notify(HostChangeEvent(slot=0xFF, pid=0xB35B, target_host=0))
++
++    (mouse_write,) = _published(topics)
++    assert mouse_write.defer_ttl == HOST_CHANGE_DEFER_TTL
++    assert mouse_write.discard_if is None
++
++
++def test_defer_ttl_is_bounded():
++    assert 0 < HOST_CHANGE_DEFER_TTL <= 15.0
