@@ -13,7 +13,7 @@ Windows, the same patch for the Mac side, and a hand-off file for the two machin
 | Side | State |
 |---|---|
 | Windows | `1.5.4+reconnect.2` installed, autostarts, logging to a rotating file; live-verified 2026-10-04 (8/8 Windows → Mac presses moved both devices, reconnects opened within the same second) |
-| macOS | stock 1.5.4 via Homebrew, patch pending — the mouse still trails the keyboard by 1–12 s on Mac → Windows; see [HANDOFF.md](HANDOFF.md) and [mac/APPLY.md](mac/APPLY.md) |
+| macOS | `1.5.4+fastreconnect` installed (local build of upstream v1.5.4 + [patches/mac-reconnect-backoff-deferred-write.patch](patches/mac-reconnect-backoff-deferred-write.patch), run by a user LaunchAgent, not Homebrew); live-verified 2026-10-04 (6/6 Mac → Windows presses moved both devices, incl. a return 3 s after arrival). See [mac/README.md](mac/README.md) |
 
 ## The setup this was built for
 
@@ -153,8 +153,15 @@ Two `cleverswitch.exe` processes are normal: the PyInstaller onefile bootstrappe
 
 ## macOS
 
-See [mac/APPLY.md](mac/APPLY.md): locate the Homebrew-installed package, `patch -p2 --dry-run` the
-source-only diff inside its `site-packages`, apply, `brew services restart cleverswitch`, then look for
+What is actually installed on the Mac, how it is run (user LaunchAgent, release binary, not Homebrew),
+the Input Monitoring re-grant after a binary swap, the Karabiner-Elements change that keeps
+Ctrl+H/J/K/L working, build/install scripts and the live verification: [mac/README.md](mac/README.md).
+The Mac currently runs its own smaller patch, [patches/mac-reconnect-backoff-deferred-write.patch](patches/mac-reconnect-backoff-deferred-write.patch);
+the differences from the repository patch are tabled there.
+
+For a Homebrew-installed CleverSwitch, [mac/APPLY.md](mac/APPLY.md) describes applying the repository
+patch in place: locate the package, `patch -p2 --dry-run` the source-only diff inside its
+`site-packages`, apply, `brew services restart cleverswitch`, then look for
 `Reconnect wait interrupted`, `Deferring write`, `Sending deferred write` in the service log.
 
 ## Verification protocol
@@ -177,7 +184,7 @@ Record outcomes in the matrix in [HANDOFF.md](HANDOFF.md).
 
 ## Known limitations
 
-- Until the Mac side is patched, the Mac → Windows direction still depends on the Mac's blind window.
+- The two machines run two different implementations of the fix (see [mac/README.md](mac/README.md) §3); the Mac's held write expires after 5 s, the Windows one after 10 s. Converging the Mac on `cleverswitch/` is open.
 - A parked host change expires after 10 s; a mouse that takes longer to arrive stays behind as before.
 - Very rarely (press 1 on Windows, press 2 on the Mac within a few seconds, and the mouse reconnects to
   Windows more than 1 s before the keyboard) the parked command can send the mouse back; the log shows
