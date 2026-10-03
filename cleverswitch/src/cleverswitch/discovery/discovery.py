@@ -63,6 +63,11 @@ def discover(app_context: AppContext) -> None:
                         gateways[device.pid] = pid_gateways
                         hid_gateway.start()
                     event_listener.start()
+                else:
+                    # Known pid is enumerable again: interrupt any of its gateways parked in
+                    # reconnect backoff so the returning device is opened within one sweep.
+                    for hid_gateway in gateways[pid]:
+                        hid_gateway.wake()
 
             shutdown.wait(0.5)
         _undivert_all(app_context.device_registry, topics)

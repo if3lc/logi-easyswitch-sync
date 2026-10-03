@@ -224,8 +224,27 @@ def enumerate_hid_devices(
     """Call hid_enumerate and return HID++ capable devices (receivers + BT), freeing the linked list."""
     with _ENUM_LOCK:
         result = _enumerate_locked(vendor_id, product_id)
-    _log(f"All suitable hid devices={result}", verbose_extra)
+    if verbose_extra:
+        _log_enumeration_change(vendor_id, product_id, result)
     return result
+
+
+# Last enumeration result logged, per filter. The discovery sweep enumerates twice a second; with
+# -vv that was ~1.3 KB per sweep (48 MB in 12 hours) of identical lines. Logging only transitions
+# keeps -vv usable as an always-on setting while still recording exactly when a device appeared or
+# vanished.
+_LAST_ENUM_LOGGED: dict[tuple[int, int], str] = {}
+_ENUM_LOG_LOCK = threading.Lock()
+
+
+def _log_enumeration_change(vendor_id: int, product_id: int, result: dict[int, list[HidDeviceInfo]]) -> None:
+    key = (vendor_id, product_id)
+    rendered = str(result)
+    with _ENUM_LOG_LOCK:
+        if _LAST_ENUM_LOGGED.get(key) == rendered:
+            return
+        _LAST_ENUM_LOGGED[key] = rendered
+    log.debug(f"All suitable hid devices={rendered}")
 
 
 def _enumerate_locked(vendor_id: int, product_id: int) -> dict[int, list[HidDeviceInfo]]:
