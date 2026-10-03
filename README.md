@@ -12,8 +12,8 @@ Windows, the same patch for the Mac side, and a hand-off file for the two machin
 
 | Side | State |
 |---|---|
-| Windows | `1.5.4+reconnect.2` installed, autostarts, logging to a rotating file |
-| macOS | stock 1.5.4 via Homebrew, patch pending — see [HANDOFF.md](HANDOFF.md) and [mac/APPLY.md](mac/APPLY.md) |
+| Windows | `1.5.4+reconnect.2` installed, autostarts, logging to a rotating file; live-verified 2026-10-04 (8/8 Windows → Mac presses moved both devices, reconnects opened within the same second) |
+| macOS | stock 1.5.4 via Homebrew, patch pending — the mouse still trails the keyboard by 1–12 s on Mac → Windows; see [HANDOFF.md](HANDOFF.md) and [mac/APPLY.md](mac/APPLY.md) |
 
 ## The setup this was built for
 

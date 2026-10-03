@@ -22,8 +22,8 @@ them under "Log excerpts"; keep decisions under "Messages".
 
 | Side | Build | Autostart | Verified |
 |---|---|---|---|
-| Windows | `1.5.4+reconnect.2` (this repo, `windows/dist`) | Startup folder VBS, `-vv --log-file` | unit tests, build, start, rollback round trip; live switching not yet observed (devices were on the Mac) |
-| Mac | stock 1.5.4 (Homebrew) | `brew services` | works once per side, then slow to re-arm (same bug) |
+| Windows | `1.5.4+reconnect.2` (this repo, `windows/dist`) | Startup folder VBS, `-vv --log-file` | unit tests, build, start, rollback round trip, and **live: 8/8 Windows → Mac presses moved both devices, 12/12 reconnects opened in the same second, stale-check prevented one bounce** (00:38–01:03, see excerpt) |
+| Mac | stock 1.5.4 (Homebrew) | `brew services` | unpatched: on Mac → Windows the mouse trails the keyboard by 1–12 s and twice did not come at all until a later press (see excerpt) |
 
 ## Open tasks
 
@@ -47,11 +47,11 @@ them under "Log excerpts"; keep decisions under "Messages".
 
 | # | Direction | Keyboard moved | Mouse moved | Log evidence (side, time) | By / when |
 |---|---|---|---|---|---|
-| 1 | Windows → Mac | | | | |
-| 2 | Mac → Windows | | | | |
-| 3 | Windows → Mac, quick return (1–2 s after arrival) | | | | |
-| 4 | Mac → Windows, quick return | | | | |
-| 5 | 5 cycles with 5–10 s pauses | | | | |
+| 1 | Windows → Mac | yes | yes | Windows 00:40:09, 00:52:41, 00:54:07, 01:03:17: write + echo + both disconnect | [Windows] 2026-10-04 (log) |
+| 2 | Mac → Windows | yes | late (1–12 s) or missing until a later press | Windows 00:39:04, 00:41:35, 00:53:13, 01:02:51 | [Windows] 2026-10-04 (log); Mac unpatched |
+| 3 | Windows → Mac, quick return (1–2 s after arrival) | yes | yes | Windows 00:41:36, 01:02:48 | [Windows] 2026-10-04 (log) |
+| 4 | Mac → Windows, quick return | | | | pending Mac patch |
+| 5 | 5 cycles with 5–10 s pauses | | | 8 Windows → Mac presses in 00:38–01:03 all moved both | needs a deliberate run after the Mac patch |
 | 6 | Sleeping mouse, press 1, wake within 10 s | | | | |
 
 ## Log excerpts
@@ -78,6 +78,51 @@ Full extracted timelines: `docs/timeline-2026-10-03-stock-1.5.4.txt`, `docs/time
 00:24:44  HostChangeEvent target_host=0 → Dropping write to pid=0xB023: device disconnected
 ```
 
+### 2026-10-04 00:38–01:03 patched 1.5.4+reconnect.2 on Windows (live, user-driven)
+
+Full extracted timeline: `docs/timeline-2026-10-04-live-reconnect2.txt`. No ERROR/WARNING lines.
+
+Reopen latency after the fix (every reconnect, both devices):
+
+```text
+00:41:25  ENUM present=['0xb35b'] → Reconnect wait interrupted → 'MX Keys' reconnected      same second
+00:41:35  ENUM present=[…,'0xb023'] → Reconnect wait interrupted → 'MX Master 3' reconnected  same second
+(12 of 12 reconnects between 00:41 and 01:03 opened in the same second; stock build: 3–29 s)
+```
+
+Quick return, 1 s after the mouse arrived (would have been dropped by the stock build):
+
+```text
+00:41:35  'MX Master 3' reconnected
+00:41:36  HostChangeEvent target_host=0 → Writing to pid=0xB023: 11ff0a1f00…  → echo → both disconnected
+01:02:47  'MX Master 3' reconnected
+01:02:48  HostChangeEvent target_host=0 → Writing to pid=0xB023: 11ff0a1f00…  → echo → both disconnected
+```
+
+Parked write discarded by the stale check, exactly the bounce case it exists for:
+
+```text
+01:03:07  HostChangeEvent target_host=0 → Deferring write to pid=0xB023 for up to 10.0s   (mouse still on the Mac)
+01:03:08  'MX Keys' disconnected                                                           (keyboard went to the Mac)
+01:03:14  keyboard AND mouse reconnected together                                          (user pressed 2 on the Mac)
+01:03:14  Device pid=0xB023 is back; deferred write goes out in 1.0s unless it turns stale
+01:03:15  Discarding deferred write to pid=0xB023: stale, the source device is back on this host
+01:03:17  HostChangeEvent target_host=0 → Writing to pid=0xB023 → both leave               (next press works normally)
+```
+
+Expiry path (mouse never came back within 10 s): parked 00:56:24, `Discarding deferred write ... expired 374.2s ago` at 01:02:48.
+
+Mac → Windows arrival gaps measured on Windows (keyboard first, then mouse), i.e. how late the
+**Mac** side sends the mouse: +6 s (00:39), +10 s (00:41), +4 s (00:50), +12 s (00:53), +5 s (00:54),
++1 s (01:02), 0 s (01:03). At 01:02:51 and 01:03:02 the keyboard came back alone and the mouse only
+followed at 01:03:14 — the Mac-side blind window; this is what the Mac patch should remove.
+
+Unexplained, not caused by the Windows daemon (no write was issued): the mouse connected to Windows
+alone at 00:53:44 and left at 00:53:49; connected alone at 00:55:45 (2 s before the keyboard) and
+left alone at 00:56:06. Candidates: the mouse's own channel button, or Logi Options+ Flow if it is
+enabled on either machine. [Mac], please check whether the Mac log shows writes to `0xB023` at those
+times.
+
 ### Mac (to be appended by [Mac])
 
 ## Messages
@@ -94,3 +139,14 @@ For the Mac: please apply the source-only patch as described in `mac/APPLY.md`, 
 and append your log excerpt here. Questions I cannot answer from Windows: the exact service log path
 and argument list under `brew services`, and whether `HidGatewayBLE` shows `BLE notify subscribed`
 after each reconnect. Do not change Karabiner or Options+ settings for this.
+
+### 2026-10-04 01:25 [Windows]
+
+Live data arrived after all: the user switched back and forth between 00:38 and 01:03 with the
+patched build running. Results are in the "Log excerpts" section and the matrix. Summary: every
+Windows → Mac press with the mouse present moved both devices (8/8), including two presses 1 s after
+the mouse arrived; all 12 reconnects were opened in the same second they became visible; the parked
+write was discarded once by the stale check (01:03:15) in precisely the situation it guards against,
+and expired once. The remaining failures are all on the Mac → Windows leg: the mouse trails by 1–12 s
+or stays on the Mac until a later press — the unpatched Mac gateway. Priority for [Mac]: apply the
+patch, then we rerun rows 2, 4, 5 and 6 of the matrix together.
