@@ -52,7 +52,7 @@ class HidGateway(Thread, Subscriber):
         self._connected_signal = threading.Event()
         self._ever_connected: bool = False
         self._grace_deadline = time.monotonic() + _FIRST_CONNECT_GRACE
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._transport: HIDTransport | None = None
         self._event_listener: EventListener = event_listener
         self._backoff: float = _RECONNECT_BACKOFF_MIN
@@ -76,9 +76,9 @@ class HidGateway(Thread, Subscriber):
     def run(self):
         # The reader owns its handle end to end: hid_close's CancelIo only cancels I/O issued by
         # the calling thread, so closing from anywhere else can leave the kernel writing into
-        # freed heap. close() sets _stop and joins instead of touching the transport.
+        # freed heap. close() sets _stop_event and joins instead of touching the transport.
         try:
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 if self._connected:
                     try:
                         hid_event = self._transport.read()
@@ -89,7 +89,7 @@ class HidGateway(Thread, Subscriber):
                             f"Received HID event from pid=0x{self._device_info.pid:04X}: {hid_event.hex()}",
                         )
                     except TransportError:
-                        if self._stop.is_set():
+                        if self._stop_event.is_set():
                             break
                         log.debug(f"Device disconnected pid=0x{self._device_info.pid:04X}")
                         self._set_connected(False)
@@ -140,7 +140,7 @@ class HidGateway(Thread, Subscriber):
         if woke:
             # Retry at once. The backoff step is left as is, so a device that is visible but
             # refuses to open cannot retry faster than the sweep that wakes us.
-            if not self._stop.is_set():
+            if not self._stop_event.is_set():
                 log.debug(f"Reconnect wait interrupted for pid=0x{self._device_info.pid:04X}: device visible")
             return
         self._backoff = min(self._backoff * 2, _RECONNECT_BACKOFF_MAX)
@@ -259,7 +259,7 @@ class HidGateway(Thread, Subscriber):
         transport.write(msg)
 
     def close(self):
-        self._stop.set()
+        self._stop_event.set()
         self._wake.set()  # unblock a reader parked in _backoff_wait
         if threading.current_thread() is self:
             return  # run()'s finally closes the handle on the way out

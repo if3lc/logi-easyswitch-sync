@@ -102,7 +102,7 @@ def test_stopped_read_failure_publishes_no_transport_disconnected():
     gw._transport = MagicMock()
 
     def read_after_close():
-        gw._stop.set()
+        gw._stop_event.set()
         raise TransportError("read on closed transport")
 
     gw._transport.read.side_effect = read_after_close

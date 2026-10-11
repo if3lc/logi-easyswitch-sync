@@ -66,7 +66,7 @@ class HidGatewayBLE(HidGatewayBT):
             self._event_listener.listen(self._create_connection_event())
             return
         deadline = time.monotonic() + _BLE_SUBSCRIBE_GRACE
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             if self._ble_subscribed.wait(timeout=1.0):
                 self._event_listener.listen(self._create_connection_event())
                 return
@@ -100,7 +100,7 @@ class HidGatewayBLE(HidGatewayBT):
             loop.close()
 
     async def _ble_main(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             if not self._connected:
                 await asyncio.sleep(0.5)
                 continue
@@ -129,7 +129,7 @@ class HidGatewayBLE(HidGatewayBT):
             self._ble_subscribed.set()
             log.debug(f"BLE notify subscribed pid=0x{self._device_info.pid:04X}")
             try:
-                while self._connected and not self._stop.is_set():
+                while self._connected and not self._stop_event.is_set():
                     await asyncio.sleep(0.5)
             finally:
                 # No explicit stop_notify: leaving the `async with` disconnects the client, which

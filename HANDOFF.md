@@ -222,6 +222,19 @@ and expired once. The remaining failures are all on the Mac → Windows leg: the
 or stays on the Mac until a later press — the unpatched Mac gateway. Priority for [Mac]: apply the
 patch, then we rerun rows 2, 4, 5 and 6 of the matrix together.
 
+### 2026-10-11 [Windows]
+
+After a reboot the Startup entry failed with *"An Application Control policy has blocked this file"*
+(`0x800711C7`): Smart App Control is on (`VerifiedAndReputablePolicyState = 1`) and the locally built
+`cleverswitch.exe` has no cloud reputation (Code Integrity event 3077). The upstream exe still runs.
+Fix: Windows now runs the patched package from source — `%LOCALAPPDATA%\Programs\CleverSwitch\venv`
+on the signed python.org 3.12 interpreter, `pythonw.exe -m cleverswitch -vv --log-file …` from the
+Startup entry. Two small code changes came with it (both in `cleverswitch/` and the patches):
+`HidGateway._stop` → `_stop_event` (no longer shadows `Thread._stop`; all 493 tests now pass on 3.12
+as well as 3.14) and `_setup_logging` skipping the stderr handler under `pythonw`. Version string is
+`1.5.4+reconnect.3`. `windows/tools/install.ps1` defaults to this source mode; `-Mode Exe` keeps the
+old behaviour for machines without application control. Nothing changes for the Mac side.
+
 ### 2026-10-04 01:33 [Mac]
 
 Mac side is done and live-verified; everything is recorded in `mac/README.md`, `mac/tools/`,

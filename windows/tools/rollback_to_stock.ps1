@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
     Rolls CleverSwitch back to a backed-up exe and Startup entry (by default the untouched upstream
-    1.5.4 saved by install.ps1), then relaunches. Logs, source and tools are left in place.
+    1.5.4 saved by install.ps1), then relaunches. Logs, venv, source and tools are left in place.
 
 .PARAMETER InstallDir
-    Where cleverswitch.exe lives. Default: %LOCALAPPDATA%\Programs\CleverSwitch.
+    Where the runtime lives. Default: %LOCALAPPDATA%\Programs\CleverSwitch.
 
 .PARAMETER BackupExe
     File name under <InstallDir>\backup to restore. Default: cleverswitch-1.5.4-stock.exe.
@@ -26,10 +26,12 @@ $vbsSrc = Join-Path $backup $BackupVbs
 if (-not (Test-Path $exeSrc)) { throw "Backup exe missing: $exeSrc" }
 if (-not (Test-Path $vbsSrc)) { throw "Backup Startup entry missing: $vbsSrc" }
 
-$running = Get-Process -Name cleverswitch -ErrorAction SilentlyContinue
+$running = Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -eq "cleverswitch.exe" -or ($_.CommandLine -and $_.CommandLine -match "-m cleverswitch")
+}
 if ($running) {
-    Write-Host ("Stopping cleverswitch.exe PIDs: " + ($running.Id -join ", "))
-    $running | Stop-Process -Force -Confirm:$false
+    Write-Host ("Stopping: " + (($running | ForEach-Object { "$($_.Name)[$($_.ProcessId)]" }) -join ", "))
+    $running | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
 }
 

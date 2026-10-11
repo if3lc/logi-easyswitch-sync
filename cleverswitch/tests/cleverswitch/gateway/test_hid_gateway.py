@@ -147,7 +147,7 @@ def test_close_sets_stop_even_without_transport():
 
     gw.close()
 
-    assert gw._stop.is_set()
+    assert gw._stop_event.is_set()
 
 
 # ── HidGateway.run teardown ─────────────────────────────────────────────────
@@ -163,7 +163,7 @@ def _stopping_gateway() -> HidGateway:
     gw._transport = MagicMock()
 
     def read_after_close():
-        gw._stop.set()
+        gw._stop_event.set()
         raise TransportError("read on closed transport")
 
     gw._transport.read.side_effect = read_after_close
@@ -317,7 +317,7 @@ def test_run_continues_after_none_read():
         yield None
         yield None
         yield event
-        gw._stop.set()
+        gw._stop_event.set()
         yield None
 
     gen = reads()

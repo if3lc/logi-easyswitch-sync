@@ -12,7 +12,7 @@ Windows, the same patch for the Mac side, and a hand-off file for the two machin
 
 | Side | State |
 |---|---|
-| Windows | `1.5.4+reconnect.2` installed, autostarts, logging to a rotating file; live-verified 2026-10-04 (8/8 Windows → Mac presses moved both devices, reconnects opened within the same second) |
+| Windows | `1.5.4+reconnect.3` running from source in a venv on the signed python.org interpreter (Smart App Control blocks locally built exes, see below), autostarts, logging to a rotating file; live-verified 2026-10-04 (8/8 Windows → Mac presses moved both devices, reconnects opened within the same second) |
 | macOS | `1.5.4+fastreconnect` installed (local build of upstream v1.5.4 + [patches/mac-reconnect-backoff-deferred-write.patch](patches/mac-reconnect-backoff-deferred-write.patch), run by a user LaunchAgent, not Homebrew); live-verified 2026-10-04 (6/6 Mac → Windows presses moved both devices, incl. a return 3 s after arrival). See [mac/README.md](mac/README.md) |
 
 ## The setup this was built for
@@ -77,8 +77,12 @@ Unified diff against upstream v1.5.4: [patches/cleverswitch-1.5.4-reconnect.patc
    daemon can run with `-vv` indefinitely.
 4. **Quieter `-vv`.** The enumeration dump is logged only when it changes (it was ~1.3 KB twice a
    second, 48 MB in 12 hours).
+5. **Runs on Python 3.10–3.14.** The gateway's stop flag no longer shadows `threading.Thread._stop`
+   (which broke `join()`/`is_alive()` on Python ≤ 3.12), and logging copes with `pythonw.exe`
+   having no stderr.
 
-Test suite: 493 tests pass, 96 % coverage, `ruff format --check` and `ruff check` clean.
+Test suite: 493 tests pass on Python 3.12 and 3.14, 96 % coverage, `ruff format --check` and
+`ruff check` clean.
 
 ## Repository layout
 
@@ -96,24 +100,43 @@ LICENSE                  GPL-3.0-or-later (inherited from upstream)
 
 ## Windows
 
-### Install the prebuilt exe
+### Install (source mode, default)
 
-Per-user install, no elevation. From a PowerShell prompt in the repository:
+Per-user install, no elevation. Needs an official Python 3.10+ from python.org (its `python.exe` is
+Authenticode-signed; that matters, see the next section). From a PowerShell prompt in the repository:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\windows\tools\install.ps1
 ```
 
-The script verifies the exe (`cleverswitch.exe --version`), stops any running instance, backs up the
-current exe and Startup entry under `%LOCALAPPDATA%\Programs\CleverSwitch\backup`, copies the new exe,
-writes `run_cleverswitch.vbs` into the user's Startup folder so the daemon starts hidden at logon with
-`-vv --log-file "...\logs\cleverswitch.log"`, and launches it through that same Startup entry.
+The script stops any running instance, backs up the current exe and Startup entry under
+`%LOCALAPPDATA%\Programs\CleverSwitch\backup`, creates `%LOCALAPPDATA%\Programs\CleverSwitch\venv`
+with the official interpreter, installs the `cleverswitch/` tree into it as `1.5.4+reconnect.3`,
+drops `hidapi.dll` next to the venv's scripts, writes `run_cleverswitch.vbs` into the user's Startup
+folder so `pythonw.exe -m cleverswitch -vv --log-file "...\logs\cleverswitch.log"` starts hidden at
+logon, and launches it through that same Startup entry.
 
-Check the checksum first if you like:
+### Smart App Control / App Control for Business
+
+On a Windows 11 PC with Smart App Control **on** (`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`,
+`VerifiedAndReputablePolicyState = 1`), a locally built PyInstaller exe is blocked at launch with
+*"An Application Control policy has blocked this file"* (`0x800711C7`, Code Integrity event 3077),
+because it is unsigned and its hash has no cloud reputation. The upstream release exe runs only
+because enough people have run that exact file. Smart App Control cannot be given per-app exceptions
+and, once switched off, cannot be switched on again without reinstalling Windows, so this repository
+does not ask you to do that. Source mode sidesteps the problem: the interpreter is signed by the Python
+Software Foundation, the PyPI wheels and the unchanged upstream `hidapi.dll` have reputation, and the
+patched code is plain `.py` files.
+
+### Prebuilt exe (machines without application control)
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\tools\install.ps1 -Mode Exe
 Get-FileHash .\windows\dist\cleverswitch.exe -Algorithm SHA256; Get-Content .\windows\dist\SHA256SUMS.txt
 ```
+
+`windows/dist/cleverswitch.exe` is `1.5.4+reconnect.2` (one revision behind the source tree: it lacks
+the Python ≤ 3.12 and pythonw fixes, which do not affect an exe built on 3.14).
 
 ### Build from source
 
@@ -149,7 +172,8 @@ powershell -ExecutionPolicy Bypass -File .\windows\tools\restart_cleverswitch.ps
 powershell -ExecutionPolicy Bypass -File .\windows\tools\rollback_to_stock.ps1
 ```
 
-Two `cleverswitch.exe` processes are normal: the PyInstaller onefile bootstrapper and its child.
+In exe mode two `cleverswitch.exe` processes are normal (the PyInstaller onefile bootstrapper and
+its child); in source mode look for one `pythonw.exe` whose command line contains `-m cleverswitch`.
 
 ## macOS
 
@@ -197,10 +221,11 @@ Record outcomes in the matrix in [HANDOFF.md](HANDOFF.md).
 
 ## Upstream
 
-Not submitted upstream yet. The change is deliberately contained (6 source files) so it could become a
-pull request against CleverSwitch; it would resolve issue #121. One unrelated upstream nit found on the
-way: `HidGateway` names its stop event `_stop`, shadowing `threading.Thread._stop`, which breaks
-`join()`/`is_alive()` on Python ≤ 3.12 (upstream CI and the release use 3.14, where it is harmless).
+Not submitted upstream yet. The change is deliberately contained (7 source files) so it could become a
+pull request against CleverSwitch; it would resolve issue #121. The `_stop` → `_stop_event` rename
+fixes an unrelated upstream nit: `HidGateway` named its stop event `_stop`, shadowing
+`threading.Thread._stop`, which broke `join()`/`is_alive()` (and four upstream tests) on Python ≤ 3.12;
+upstream CI and the release use 3.14, where it was harmless.
 
 ## License
 

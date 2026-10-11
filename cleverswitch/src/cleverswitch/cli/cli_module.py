@@ -89,11 +89,15 @@ def _setup_logging(verbose: bool, log_file: str | None = None, log_max_mb: int =
         level = "DEBUG"
     else:
         level = "INFO"
-    logging.basicConfig(
-        level=getattr(logging, level, logging.INFO),
-        format=_LOG_FORMAT,
-        datefmt="%H:%M:%S",
-    )
+    if sys.stderr is not None:
+        logging.basicConfig(
+            level=getattr(logging, level, logging.INFO),
+            format=_LOG_FORMAT,
+            datefmt="%H:%M:%S",
+        )
+    else:
+        # pythonw.exe has no stderr; a StreamHandler on None would swallow every record.
+        logging.getLogger().setLevel(getattr(logging, level, logging.INFO))
     # Quiet down the hid library's own logger
     logging.getLogger("hid").setLevel(logging.WARNING)
     if log_file:

@@ -1,6 +1,6 @@
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ../b/src/cleverswitch/cli/cli_module.py
 --- a/src/cleverswitch/cli/cli_module.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/cli/cli_module.py	2026-10-04 00:30:52.147437700 +0300
++++ b/src/cleverswitch/cli/cli_module.py	2026-10-11 04:45:15.786671700 +0300
 @@ -7,6 +7,8 @@
  import platform
  import sys
@@ -44,7 +44,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ..
      p.add_argument(
          "--version",
          action="version",
-@@ -68,15 +84,29 @@
+@@ -68,15 +84,33 @@
      return p.parse_args()
  
  
@@ -54,12 +54,20 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ..
          level = "DEBUG"
      else:
          level = "INFO"
-     logging.basicConfig(
-         level=getattr(logging, level, logging.INFO),
+-    logging.basicConfig(
+-        level=getattr(logging, level, logging.INFO),
 -        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-+        format=_LOG_FORMAT,
-         datefmt="%H:%M:%S",
-     )
+-        datefmt="%H:%M:%S",
+-    )
++    if sys.stderr is not None:
++        logging.basicConfig(
++            level=getattr(logging, level, logging.INFO),
++            format=_LOG_FORMAT,
++            datefmt="%H:%M:%S",
++        )
++    else:
++        # pythonw.exe has no stderr; a StreamHandler on None would swallow every record.
++        logging.getLogger().setLevel(getattr(logging, level, logging.INFO))
      # Quiet down the hid library's own logger
      logging.getLogger("hid").setLevel(logging.WARNING)
 +    if log_file:
@@ -78,7 +86,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ..
 +    logging.getLogger().addHandler(handler)
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/discovery/discovery.py ../b/src/cleverswitch/discovery/discovery.py
 --- a/src/cleverswitch/discovery/discovery.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/discovery/discovery.py	2026-10-04 00:30:52.150439700 +0300
++++ b/src/cleverswitch/discovery/discovery.py	2026-10-11 04:45:15.788671800 +0300
 @@ -63,6 +63,11 @@
                          gateways[device.pid] = pid_gateways
                          hid_gateway.start()
@@ -93,7 +101,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/discovery/discovery.
          _undivert_all(app_context.device_registry, topics)
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/event/write_event.py ../b/src/cleverswitch/event/write_event.py
 --- a/src/cleverswitch/event/write_event.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/event/write_event.py	2026-10-04 00:30:52.109512600 +0300
++++ b/src/cleverswitch/event/write_event.py	2026-10-11 04:45:15.765633400 +0300
 @@ -1,4 +1,5 @@
  import dataclasses
 +from collections.abc import Callable
@@ -112,7 +120,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/event/write_event.py
 +    discard_if: Callable[[], bool] | None = dataclasses.field(default=None, compare=False, repr=False)
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.py ../b/src/cleverswitch/gateway/hid_gateway.py
 --- a/src/cleverswitch/gateway/hid_gateway.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/gateway/hid_gateway.py	2026-10-04 00:30:52.125606300 +0300
++++ b/src/cleverswitch/gateway/hid_gateway.py	2026-10-11 04:45:15.774633200 +0300
 @@ -22,13 +22,22 @@
  
  # Reconnect backoff. A device parked on another host used to make every disconnected gateway
@@ -137,7 +145,12 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.
  _USAGE_TO_REPORT_ID = {
      HIDPP_USAGE_SHORT: REPORT_SHORT,
      HIDPP_USAGE_LONG: REPORT_LONG,
-@@ -47,6 +56,11 @@
+@@ -43,10 +52,15 @@
+         self._connected_signal = threading.Event()
+         self._ever_connected: bool = False
+         self._grace_deadline = time.monotonic() + _FIRST_CONNECT_GRACE
+-        self._stop = threading.Event()
++        self._stop_event = threading.Event()
          self._transport: HIDTransport | None = None
          self._event_listener: EventListener = event_listener
          self._backoff: float = _RECONNECT_BACKOFF_MIN
@@ -149,6 +162,27 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.
  
      @property
      def _connected(self) -> bool:
+@@ -62,9 +76,9 @@
+     def run(self):
+         # The reader owns its handle end to end: hid_close's CancelIo only cancels I/O issued by
+         # the calling thread, so closing from anywhere else can leave the kernel writing into
+-        # freed heap. close() sets _stop and joins instead of touching the transport.
++        # freed heap. close() sets _stop_event and joins instead of touching the transport.
+         try:
+-            while not self._stop.is_set():
++            while not self._stop_event.is_set():
+                 if self._connected:
+                     try:
+                         hid_event = self._transport.read()
+@@ -75,7 +89,7 @@
+                             f"Received HID event from pid=0x{self._device_info.pid:04X}: {hid_event.hex()}",
+                         )
+                     except TransportError:
+-                        if self._stop.is_set():
++                        if self._stop_event.is_set():
+                             break
+                         log.debug(f"Device disconnected pid=0x{self._device_info.pid:04X}")
+                         self._set_connected(False)
 @@ -105,12 +119,30 @@
                  self._transport.try_reopen()
              self._set_connected(True)
@@ -175,7 +209,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.
 +        if woke:
 +            # Retry at once. The backoff step is left as is, so a device that is visible but
 +            # refuses to open cannot retry faster than the sweep that wakes us.
-+            if not self._stop.is_set():
++            if not self._stop_event.is_set():
 +                log.debug(f"Reconnect wait interrupted for pid=0x{self._device_info.pid:04X}: device visible")
 +            return
          self._backoff = min(self._backoff * 2, _RECONNECT_BACKOFF_MAX)
@@ -277,17 +311,49 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.
          self._write(event.hid_message)
  
      def _write(self, msg: bytes) -> None:
-@@ -162,6 +260,7 @@
+@@ -161,7 +259,8 @@
+         transport.write(msg)
  
      def close(self):
-         self._stop.set()
+-        self._stop.set()
++        self._stop_event.set()
 +        self._wake.set()  # unblock a reader parked in _backoff_wait
          if threading.current_thread() is self:
              return  # run()'s finally closes the handle on the way out
          if self.is_alive():
+diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway_ble.py ../b/src/cleverswitch/gateway/hid_gateway_ble.py
+--- a/src/cleverswitch/gateway/hid_gateway_ble.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/gateway/hid_gateway_ble.py	2026-10-11 04:45:15.773631100 +0300
+@@ -66,7 +66,7 @@
+             self._event_listener.listen(self._create_connection_event())
+             return
+         deadline = time.monotonic() + _BLE_SUBSCRIBE_GRACE
+-        while not self._stop.is_set():
++        while not self._stop_event.is_set():
+             if self._ble_subscribed.wait(timeout=1.0):
+                 self._event_listener.listen(self._create_connection_event())
+                 return
+@@ -100,7 +100,7 @@
+             loop.close()
+ 
+     async def _ble_main(self) -> None:
+-        while not self._stop.is_set():
++        while not self._stop_event.is_set():
+             if not self._connected:
+                 await asyncio.sleep(0.5)
+                 continue
+@@ -129,7 +129,7 @@
+             self._ble_subscribed.set()
+             log.debug(f"BLE notify subscribed pid=0x{self._device_info.pid:04X}")
+             try:
+-                while self._connected and not self._stop.is_set():
++                while self._connected and not self._stop_event.is_set():
+                     await asyncio.sleep(0.5)
+             finally:
+                 # No explicit stop_notify: leaving the `async with` disconnects the client, which
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/hidpp/transport.py ../b/src/cleverswitch/hidpp/transport.py
 --- a/src/cleverswitch/hidpp/transport.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/hidpp/transport.py	2026-10-04 00:30:52.120093100 +0300
++++ b/src/cleverswitch/hidpp/transport.py	2026-10-11 04:45:15.771633600 +0300
 @@ -224,10 +224,29 @@
      """Call hid_enumerate and return HID++ capable devices (receivers + BT), freeing the linked list."""
      with _ENUM_LOCK:
@@ -321,7 +387,7 @@ diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/hidpp/transport.py .
      head = _lib.hid_enumerate(vendor_id, product_id)
 diff -ruN -x __pycache__ -x '*.egg-info' a/src/cleverswitch/subscriber/host_change_subscriber.py ../b/src/cleverswitch/subscriber/host_change_subscriber.py
 --- a/src/cleverswitch/subscriber/host_change_subscriber.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/subscriber/host_change_subscriber.py	2026-10-04 00:30:52.137860100 +0300
++++ b/src/cleverswitch/subscriber/host_change_subscriber.py	2026-10-11 04:45:15.780633100 +0300
 @@ -14,6 +14,13 @@
  
  log = logging.getLogger(__name__)

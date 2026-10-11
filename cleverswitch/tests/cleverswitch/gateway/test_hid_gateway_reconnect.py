@@ -112,7 +112,7 @@ def test_close_wakes_a_reader_parked_in_backoff():
 
     gw.close()
 
-    assert gw._stop.is_set()
+    assert gw._stop_event.is_set()
     assert gw._wake.is_set()
 
 

@@ -1,6 +1,6 @@
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/cli/cli_module.py ../b/src/cleverswitch/cli/cli_module.py
 --- a/src/cleverswitch/cli/cli_module.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/cli/cli_module.py	2026-10-04 00:30:52.147437700 +0300
++++ b/src/cleverswitch/cli/cli_module.py	2026-10-11 04:45:15.786671700 +0300
 @@ -7,6 +7,8 @@
  import platform
  import sys
@@ -44,7 +44,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/cli
      p.add_argument(
          "--version",
          action="version",
-@@ -68,15 +84,29 @@
+@@ -68,15 +84,33 @@
      return p.parse_args()
  
  
@@ -54,12 +54,20 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/cli
          level = "DEBUG"
      else:
          level = "INFO"
-     logging.basicConfig(
-         level=getattr(logging, level, logging.INFO),
+-    logging.basicConfig(
+-        level=getattr(logging, level, logging.INFO),
 -        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-+        format=_LOG_FORMAT,
-         datefmt="%H:%M:%S",
-     )
+-        datefmt="%H:%M:%S",
+-    )
++    if sys.stderr is not None:
++        logging.basicConfig(
++            level=getattr(logging, level, logging.INFO),
++            format=_LOG_FORMAT,
++            datefmt="%H:%M:%S",
++        )
++    else:
++        # pythonw.exe has no stderr; a StreamHandler on None would swallow every record.
++        logging.getLogger().setLevel(getattr(logging, level, logging.INFO))
      # Quiet down the hid library's own logger
      logging.getLogger("hid").setLevel(logging.WARNING)
 +    if log_file:
@@ -78,7 +86,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/cli
 +    logging.getLogger().addHandler(handler)
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/discovery/discovery.py ../b/src/cleverswitch/discovery/discovery.py
 --- a/src/cleverswitch/discovery/discovery.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/discovery/discovery.py	2026-10-04 00:30:52.150439700 +0300
++++ b/src/cleverswitch/discovery/discovery.py	2026-10-11 04:45:15.788671800 +0300
 @@ -63,6 +63,11 @@
                          gateways[device.pid] = pid_gateways
                          hid_gateway.start()
@@ -93,7 +101,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/dis
          _undivert_all(app_context.device_registry, topics)
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/event/write_event.py ../b/src/cleverswitch/event/write_event.py
 --- a/src/cleverswitch/event/write_event.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/event/write_event.py	2026-10-04 00:30:52.109512600 +0300
++++ b/src/cleverswitch/event/write_event.py	2026-10-11 04:45:15.765633400 +0300
 @@ -1,4 +1,5 @@
  import dataclasses
 +from collections.abc import Callable
@@ -112,7 +120,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/eve
 +    discard_if: Callable[[], bool] | None = dataclasses.field(default=None, compare=False, repr=False)
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway.py ../b/src/cleverswitch/gateway/hid_gateway.py
 --- a/src/cleverswitch/gateway/hid_gateway.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/gateway/hid_gateway.py	2026-10-04 00:30:52.125606300 +0300
++++ b/src/cleverswitch/gateway/hid_gateway.py	2026-10-11 04:45:15.774633200 +0300
 @@ -22,13 +22,22 @@
  
  # Reconnect backoff. A device parked on another host used to make every disconnected gateway
@@ -137,7 +145,12 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gat
  _USAGE_TO_REPORT_ID = {
      HIDPP_USAGE_SHORT: REPORT_SHORT,
      HIDPP_USAGE_LONG: REPORT_LONG,
-@@ -47,6 +56,11 @@
+@@ -43,10 +52,15 @@
+         self._connected_signal = threading.Event()
+         self._ever_connected: bool = False
+         self._grace_deadline = time.monotonic() + _FIRST_CONNECT_GRACE
+-        self._stop = threading.Event()
++        self._stop_event = threading.Event()
          self._transport: HIDTransport | None = None
          self._event_listener: EventListener = event_listener
          self._backoff: float = _RECONNECT_BACKOFF_MIN
@@ -149,6 +162,27 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gat
  
      @property
      def _connected(self) -> bool:
+@@ -62,9 +76,9 @@
+     def run(self):
+         # The reader owns its handle end to end: hid_close's CancelIo only cancels I/O issued by
+         # the calling thread, so closing from anywhere else can leave the kernel writing into
+-        # freed heap. close() sets _stop and joins instead of touching the transport.
++        # freed heap. close() sets _stop_event and joins instead of touching the transport.
+         try:
+-            while not self._stop.is_set():
++            while not self._stop_event.is_set():
+                 if self._connected:
+                     try:
+                         hid_event = self._transport.read()
+@@ -75,7 +89,7 @@
+                             f"Received HID event from pid=0x{self._device_info.pid:04X}: {hid_event.hex()}",
+                         )
+                     except TransportError:
+-                        if self._stop.is_set():
++                        if self._stop_event.is_set():
+                             break
+                         log.debug(f"Device disconnected pid=0x{self._device_info.pid:04X}")
+                         self._set_connected(False)
 @@ -105,12 +119,30 @@
                  self._transport.try_reopen()
              self._set_connected(True)
@@ -175,7 +209,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gat
 +        if woke:
 +            # Retry at once. The backoff step is left as is, so a device that is visible but
 +            # refuses to open cannot retry faster than the sweep that wakes us.
-+            if not self._stop.is_set():
++            if not self._stop_event.is_set():
 +                log.debug(f"Reconnect wait interrupted for pid=0x{self._device_info.pid:04X}: device visible")
 +            return
          self._backoff = min(self._backoff * 2, _RECONNECT_BACKOFF_MAX)
@@ -277,17 +311,49 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gat
          self._write(event.hid_message)
  
      def _write(self, msg: bytes) -> None:
-@@ -162,6 +260,7 @@
+@@ -161,7 +259,8 @@
+         transport.write(msg)
  
      def close(self):
-         self._stop.set()
+-        self._stop.set()
++        self._stop_event.set()
 +        self._wake.set()  # unblock a reader parked in _backoff_wait
          if threading.current_thread() is self:
              return  # run()'s finally closes the handle on the way out
          if self.is_alive():
+diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/gateway/hid_gateway_ble.py ../b/src/cleverswitch/gateway/hid_gateway_ble.py
+--- a/src/cleverswitch/gateway/hid_gateway_ble.py	2026-09-25 17:16:18.000000000 +0300
++++ b/src/cleverswitch/gateway/hid_gateway_ble.py	2026-10-11 04:45:15.773631100 +0300
+@@ -66,7 +66,7 @@
+             self._event_listener.listen(self._create_connection_event())
+             return
+         deadline = time.monotonic() + _BLE_SUBSCRIBE_GRACE
+-        while not self._stop.is_set():
++        while not self._stop_event.is_set():
+             if self._ble_subscribed.wait(timeout=1.0):
+                 self._event_listener.listen(self._create_connection_event())
+                 return
+@@ -100,7 +100,7 @@
+             loop.close()
+ 
+     async def _ble_main(self) -> None:
+-        while not self._stop.is_set():
++        while not self._stop_event.is_set():
+             if not self._connected:
+                 await asyncio.sleep(0.5)
+                 continue
+@@ -129,7 +129,7 @@
+             self._ble_subscribed.set()
+             log.debug(f"BLE notify subscribed pid=0x{self._device_info.pid:04X}")
+             try:
+-                while self._connected and not self._stop.is_set():
++                while self._connected and not self._stop_event.is_set():
+                     await asyncio.sleep(0.5)
+             finally:
+                 # No explicit stop_notify: leaving the `async with` disconnects the client, which
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/hidpp/transport.py ../b/src/cleverswitch/hidpp/transport.py
 --- a/src/cleverswitch/hidpp/transport.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/hidpp/transport.py	2026-10-04 00:30:52.120093100 +0300
++++ b/src/cleverswitch/hidpp/transport.py	2026-10-11 04:45:15.771633600 +0300
 @@ -224,10 +224,29 @@
      """Call hid_enumerate and return HID++ capable devices (receivers + BT), freeing the linked list."""
      with _ENUM_LOCK:
@@ -321,7 +387,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/hid
      head = _lib.hid_enumerate(vendor_id, product_id)
 diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/subscriber/host_change_subscriber.py ../b/src/cleverswitch/subscriber/host_change_subscriber.py
 --- a/src/cleverswitch/subscriber/host_change_subscriber.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/src/cleverswitch/subscriber/host_change_subscriber.py	2026-10-04 00:30:52.137860100 +0300
++++ b/src/cleverswitch/subscriber/host_change_subscriber.py	2026-10-11 04:45:15.780633100 +0300
 @@ -14,6 +14,13 @@
  
  log = logging.getLogger(__name__)
@@ -376,7 +442,7 @@ diff -ruN -x __pycache__ -x .pytest_cache -x '*.egg-info' a/src/cleverswitch/sub
 +    return lambda: source.connected
 diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/cli/test_cli_logfile.py ../b/tests/cleverswitch/cli/test_cli_logfile.py
 --- a/tests/cleverswitch/cli/test_cli_logfile.py	1970-01-01 03:00:00.000000000 +0300
-+++ b/tests/cleverswitch/cli/test_cli_logfile.py	2026-10-04 00:30:52.201854500 +0300
++++ b/tests/cleverswitch/cli/test_cli_logfile.py	2026-10-11 04:45:15.813674600 +0300
 @@ -0,0 +1,59 @@
 +"""--log-file: size-rotated log mirror for the headless daemon."""
 +
@@ -439,7 +505,7 @@ diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/cli/test_cli_logf
 +            handler.close()
 diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/discovery/test_discovery_wake.py ../b/tests/cleverswitch/discovery/test_discovery_wake.py
 --- a/tests/cleverswitch/discovery/test_discovery_wake.py	1970-01-01 03:00:00.000000000 +0300
-+++ b/tests/cleverswitch/discovery/test_discovery_wake.py	2026-10-04 00:30:52.191372900 +0300
++++ b/tests/cleverswitch/discovery/test_discovery_wake.py	2026-10-11 04:45:15.808671700 +0300
 @@ -0,0 +1,68 @@
 +"""The discovery sweep wakes gateways whose pid is enumerable again."""
 +
@@ -511,7 +577,34 @@ diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/discovery/test_di
 +    gateway.wake.assert_not_called()
 diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway.py ../b/tests/cleverswitch/gateway/test_hid_gateway.py
 --- a/tests/cleverswitch/gateway/test_hid_gateway.py	2026-09-25 17:16:18.000000000 +0300
-+++ b/tests/cleverswitch/gateway/test_hid_gateway.py	2026-10-04 00:30:52.196725000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway.py	2026-10-11 04:45:15.811674600 +0300
+@@ -147,7 +147,7 @@
+ 
+     gw.close()
+ 
+-    assert gw._stop.is_set()
++    assert gw._stop_event.is_set()
+ 
+ 
+ # ── HidGateway.run teardown ─────────────────────────────────────────────────
+@@ -163,7 +163,7 @@
+     gw._transport = MagicMock()
+ 
+     def read_after_close():
+-        gw._stop.set()
++        gw._stop_event.set()
+         raise TransportError("read on closed transport")
+ 
+     gw._transport.read.side_effect = read_after_close
+@@ -317,7 +317,7 @@
+         yield None
+         yield None
+         yield event
+-        gw._stop.set()
++        gw._stop_event.set()
+         yield None
+ 
+     gen = reads()
 @@ -376,7 +376,7 @@
      gw = HidGateway(_device_info(), MagicMock(spec=EventListener))
      mocker.patch("cleverswitch.gateway.hid_gateway.enumerate_hid_devices", return_value={})
@@ -530,9 +623,168 @@ diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_
  
      for _ in range(20):
          gw._try_connect()
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway_ble.py ../b/tests/cleverswitch/gateway/test_hid_gateway_ble.py
+--- a/tests/cleverswitch/gateway/test_hid_gateway_ble.py	2026-09-25 17:16:18.000000000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway_ble.py	2026-10-11 04:45:15.812675100 +0300
+@@ -42,7 +42,7 @@
+     gw, _ = _make_gw()
+     assert not gw._connected
+     assert not gw._ever_connected
+-    assert not gw._stop.is_set()
++    assert not gw._stop_event.is_set()
+ 
+ 
+ # ── close() ──────────────────────────────────────────────────────────────────
+@@ -52,7 +52,7 @@
+     gw, _ = _make_gw()
+     gw._transport = MagicMock()
+     gw.close()
+-    assert gw._stop.is_set()
++    assert gw._stop_event.is_set()
+ 
+ 
+ def test_close_also_closes_transport():
+@@ -72,7 +72,7 @@
+     thread_cls = mocker.patch("cleverswitch.gateway.hid_gateway_ble.Thread")
+ 
+     gw, _ = _make_gw()
+-    gw._stop.set()  # exit immediately after first iteration check
++    gw._stop_event.set()  # exit immediately after first iteration check
+ 
+     with patch.object(gw, "_try_connect"):
+         gw.run()
+@@ -87,7 +87,7 @@
+     mocker.patch("cleverswitch.gateway.hid_gateway_ble.Thread")
+ 
+     gw, _ = _make_gw(pid=0xB023)
+-    gw._stop.set()
++    gw._stop_event.set()
+ 
+     with patch.object(gw, "_try_connect"), caplog.at_level(logging.WARNING):
+         gw.run()
+@@ -101,7 +101,7 @@
+     thread_cls = mocker.patch("cleverswitch.gateway.hid_gateway_ble.Thread", return_value=mock_thread_instance)
+ 
+     gw, _ = _make_gw()
+-    gw._stop.set()
++    gw._stop_event.set()
+ 
+     with patch.object(gw, "_try_connect"):
+         gw.run()
+@@ -118,7 +118,7 @@
+ 
+     def fake_try_connect():
+         call_count[0] += 1
+-        gw._stop.set()
++        gw._stop_event.set()
+ 
+     with patch.object(gw, "_try_connect", side_effect=fake_try_connect):
+         gw.run()
+@@ -160,7 +160,7 @@
+     async def run():
+         async def fake_sleep(t):
+             sleep_count[0] += 1
+-            gw._stop.set()
++            gw._stop_event.set()
+ 
+         with patch("cleverswitch.gateway.hid_gateway_ble.asyncio.sleep", side_effect=fake_sleep):
+             with patch.object(gw, "_find_peripheral_by_wpid", new_callable=AsyncMock) as find_mock:
+@@ -180,7 +180,7 @@
+     async def run():
+         async def fake_find(wpid):
+             calls[0] += 1
+-            gw._stop.set()
++            gw._stop_event.set()
+             return None
+ 
+         with patch.object(gw, "_find_peripheral_by_wpid", side_effect=fake_find):
+@@ -205,7 +205,7 @@
+ 
+         async def fake_connect(device):
+             connect_calls[0] += 1
+-            gw._stop.set()
++            gw._stop_event.set()
+ 
+         with patch.object(gw, "_find_peripheral_by_wpid", side_effect=fake_find):
+             with patch.object(gw, "_connect_and_listen", side_effect=fake_connect):
+@@ -227,7 +227,7 @@
+ 
+         async def fake_sleep(t):
+             sleep_calls[0] += 1
+-            gw._stop.set()
++            gw._stop_event.set()
+ 
+         with patch.object(gw, "_find_peripheral_by_wpid", side_effect=fake_find):
+             with patch("cleverswitch.gateway.hid_gateway_ble.asyncio.sleep", side_effect=fake_sleep):
+@@ -250,7 +250,7 @@
+     mock_client.__aexit__ = AsyncMock(return_value=False)
+ 
+     async def run():
+-        gw._stop.set()  # exit the inner while immediately
++        gw._stop_event.set()  # exit the inner while immediately
+ 
+         with patch("cleverswitch.gateway.hid_gateway_ble.BleakClient", return_value=mock_client):
+             await gw._connect_and_listen(MagicMock())
+@@ -278,7 +278,7 @@
+         return mock_client
+ 
+     async def run():
+-        gw._stop.set()
++        gw._stop_event.set()
+ 
+         with patch("cleverswitch.gateway.hid_gateway_ble.BleakClient", side_effect=fake_bleak_client):
+             await gw._connect_and_listen(MagicMock())
+@@ -310,7 +310,7 @@
+         return mock_client
+ 
+     async def run():
+-        gw._stop.set()
++        gw._stop_event.set()
+ 
+         with patch("cleverswitch.gateway.hid_gateway_ble.BleakClient", side_effect=fake_bleak_client):
+             await gw._connect_and_listen(MagicMock())
+@@ -386,7 +386,7 @@
+ 
+     # Don't set _ble_subscribed; trigger shutdown instead
+     assert fired.wait(timeout=0.3) is False
+-    gw._stop.set()
++    gw._stop_event.set()
+ 
+     assert fired.wait(timeout=2.0) is True
+     event_listener.listen.assert_not_called()
+@@ -419,7 +419,7 @@
+     mock_client.__aexit__ = AsyncMock(return_value=False)
+ 
+     async def run():
+-        gw._stop.set()
++        gw._stop_event.set()
+         with patch("cleverswitch.gateway.hid_gateway_ble.BleakClient", return_value=mock_client):
+             await gw._connect_and_listen(MagicMock())
+ 
+@@ -557,7 +557,7 @@
+     gw, _ = _make_gw()
+     transport = MagicMock()
+     gw._transport = transport
+-    gw._stop.set()
++    gw._stop_event.set()
+ 
+     gw.run()
+ 
+diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway_receiver.py ../b/tests/cleverswitch/gateway/test_hid_gateway_receiver.py
+--- a/tests/cleverswitch/gateway/test_hid_gateway_receiver.py	2026-09-25 17:16:18.000000000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway_receiver.py	2026-10-11 04:45:15.811674600 +0300
+@@ -102,7 +102,7 @@
+     gw._transport = MagicMock()
+ 
+     def read_after_close():
+-        gw._stop.set()
++        gw._stop_event.set()
+         raise TransportError("read on closed transport")
+ 
+     gw._transport.read.side_effect = read_after_close
 diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py ../b/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py
 --- a/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py	1970-01-01 03:00:00.000000000 +0300
-+++ b/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py	2026-10-04 00:30:52.196725000 +0300
++++ b/tests/cleverswitch/gateway/test_hid_gateway_reconnect.py	2026-10-11 04:45:15.810674700 +0300
 @@ -0,0 +1,261 @@
 +"""Reconnect wake-up and deferred-write behaviour layered on top of 1.5.4.
 +
@@ -648,7 +900,7 @@ diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_
 +
 +    gw.close()
 +
-+    assert gw._stop.is_set()
++    assert gw._stop_event.is_set()
 +    assert gw._wake.is_set()
 +
 +
@@ -797,7 +1049,7 @@ diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/gateway/test_hid_
 +    gw._transport.write.assert_not_called()
 diff -ruN -x __pycache__ -x .pytest_cache a/tests/cleverswitch/subscriber/test_host_change_defer.py ../b/tests/cleverswitch/subscriber/test_host_change_defer.py
 --- a/tests/cleverswitch/subscriber/test_host_change_defer.py	1970-01-01 03:00:00.000000000 +0300
-+++ b/tests/cleverswitch/subscriber/test_host_change_defer.py	2026-10-04 00:30:52.175223200 +0300
++++ b/tests/cleverswitch/subscriber/test_host_change_defer.py	2026-10-11 04:45:15.801670900 +0300
 @@ -0,0 +1,96 @@
 +"""HostChangeSubscriber parks host changes for peers that are not open yet — never for the source."""
 +
