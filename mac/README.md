@@ -23,7 +23,7 @@ therefore the official v1.5.4 release archive, exactly as upstream's `docs/Insta
 | hidapi | `brew install hidapi` → 0.15.0; the binary loads `/opt/homebrew/lib/libhidapi.dylib` through ctypes |
 | Daemon | user LaunchAgent `com.user.cleverswitch` written by the installer, **not** `brew services` |
 | Plist | `~/Library/LaunchAgents/com.user.cleverswitch.plist` (copy: [`com.user.cleverswitch.plist`](com.user.cleverswitch.plist)) |
-| ProgramArguments | `/Users/if3lc/.local/bin/cleverswitch` only — no `-v`, no `--config` |
+| ProgramArguments | `/Users/if3lc/.local/bin/cleverswitch` only — no `-v`, no `--config` (since 2026-10-24 22:12 temporarily **with** `-v` to catch the issue in §9; the watchdog rotates the log) |
 | RunAtLoad / KeepAlive | `true` / `true` |
 | stdout | `/tmp/cleverswitch.out.log` (always empty) |
 | stderr = application log | `/tmp/cleverswitch.err.log`, INFO level, no rotation, lost at reboot |
@@ -201,3 +201,47 @@ are kept locally by the user (`karabiner-before-test.json`, `karabiner-before-fa
 | `restart_cleverswitch.sh` | restart the LaunchAgent and show its state |
 | `tail_log.sh` | follow `/tmp/cleverswitch.err.log` with the mouse/keyboard HID report spam filtered out |
 | `karabiner_status.sh` | print the Karabiner settings this setup depends on |
+| `cleverswitch-watchdog.sh` | every 10 min (LaunchAgent `com.user.cleverswitch-watchdog`): rotate the log at 30 MB and, while both devices are away, restart a daemon older than 20 min — see §9 |
+
+## 9. Follow-up 2026-10-24: a long-running daemon went deaf to presses; watchdog added
+
+After a Mac reboot the daemon started 2026-10-19 13:58 and relayed 98 presses over five days
+(`Sending host change` × 196). From 2026-10-23 14:33:40 on it relayed nothing: it still logged every
+`reconnected` / `disconnected`, but no `HostChangeEvent` was ever parsed again, so each press moved the
+keyboard natively and left the mouse behind (the user moved it with the mouse's own button). The INFO
+log of that instance shows, between the last relay and the deaf period, two things:
+
+- long sleep/DarkWake storms of the Mac (`pmset -g log`: sleep → DarkWake → FullWake → sleep every
+  ~30 s for minutes at a time, and a 2-minute connect every ~15 min overnight) during which both
+  devices connected and dropped on every cycle — dozens of HID open / BLE subscribe / drop rounds
+  without any user action;
+- right after one such storm, `WARNING … BLE notify error pid=0xB023/0xB35B: disconnect failed:
+  Error Domain=CBErrorDomain Code=7 "The specified device has disconnected from us."` for both devices
+  (2026-10-23 16:49:10/11).
+
+Restarting the LaunchAgent fixed it on the spot: the fresh instance saw the next press
+(22:13:36 `HostChangeEvent` → `Writing to pid=0xB023` → both `disconnected` in the same second). The
+most likely mechanism is the one upstream issue #121 describes on macOS 27: the Bluetooth/GATT side of
+`HidGatewayBLE` degrades after many connect/drop cycles while the HID side still looks healthy, so
+presses that the keyboard reports on the GATT channel are no longer heard. Not proven yet; the
+daemon now runs with `-v` (temporarily, with rotation) to capture the next occurrence.
+
+Mitigation installed (no binary change, no new permission needed):
+[`tools/cleverswitch-watchdog.sh`](tools/cleverswitch-watchdog.sh) run by
+[`com.user.cleverswitch-watchdog.plist`](com.user.cleverswitch-watchdog.plist) every 10 minutes. It
+(1) truncates `/tmp/cleverswitch.err.log` to a one-generation `.1` copy when it passes 30 MB and
+(2) only while **both** devices are connected elsewhere (`system_profiler SPBluetoothDataType` lists
+them under "Not Connected"), restarts `com.user.cleverswitch` if the running instance is older than
+20 minutes. A restart while the devices are away loses nothing, and every return to the Mac then meets
+a fresh HID/BLE session. Restarts are logged to `/tmp/cleverswitch-watchdog.log`. Install:
+
+```bash
+cp mac/tools/cleverswitch-watchdog.sh ~/.local/bin/ && chmod 755 ~/.local/bin/cleverswitch-watchdog.sh
+sed "s#/Users/if3lc#$HOME#g" mac/com.user.cleverswitch-watchdog.plist > ~/Library/LaunchAgents/com.user.cleverswitch-watchdog.plist
+launchctl load ~/Library/LaunchAgents/com.user.cleverswitch-watchdog.plist
+```
+
+Open: capture a deaf episode with `-v`, then fix `HidGatewayBLE` (candidate: tear the GATT session
+down whenever the subscription flag is cleared, not only when `_connected` is False; reuse one
+`CentralManagerDelegate` instead of creating one per probe) and rebuild — which needs the Input
+Monitoring re-grant of §5 once more.

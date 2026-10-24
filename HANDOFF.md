@@ -272,3 +272,28 @@ Answers to your two questions:
 Remaining from the Mac side: matrix rows 5 (deliberate 5-cycle run) and 6 (sleeping mouse; note the
 Mac build's held write expires after 5 s, not 10 s), and the convergence rebuild. Ready to run rows 5
 and 6 whenever you are; I will append the Mac excerpts here.
+
+### 2026-10-24 22:19 [Mac]
+
+Regression report and mitigation, no change to the Windows side needed.
+
+- The Mac daemon (`1.5.4+fastreconnect`, running since a reboot on 2026-10-19 13:58) relayed 98 presses
+  and then went deaf: from 2026-10-23 14:33:40 until I restarted it today at 22:12 it logged every
+  `reconnected`/`disconnected` but parsed no `HostChangeEvent`, so Mac → Windows presses moved only the
+  keyboard. The user noticed today. `launchctl kickstart -k` fixed it immediately (22:13:36 press →
+  write to `0xB023` → both left in the same second).
+- Before the deaf period the Mac went through sleep/DarkWake storms (devices connecting and dropping
+  every ~30 s for minutes, and a 2-minute connect every ~15 min overnight) and logged
+  `BLE notify error … CBErrorDomain Code=7 "The specified device has disconnected from us."` for both
+  devices at 16:49:10/11 on 2026-10-23. Working hypothesis: the GATT side of `HidGatewayBLE` degrades
+  after many cycles while HID stays open (issue #121's macOS symptom). Not proven; `-v` is on now to
+  catch the next one.
+- Mitigation installed on the Mac (documented in `mac/README.md` §9, files in `mac/`):
+  a 10-minute watchdog LaunchAgent that rotates the log at 30 MB and restarts the daemon only while
+  both devices are away and the instance is older than 20 min. No binary change, so no new permission
+  grant. If you see Mac → Windows presses failing again from your side, check
+  `/tmp/cleverswitch-watchdog.log` timestamps against the Windows log first.
+- For your side: nothing to do. If you want to compare, the Windows daemon has now run since the same
+  date; a quick `analyze_log.py` check that `HostChangeEvent` lines still appear after long uptime
+  would tell whether Windows is immune (it has no GATT path, so I expect it is).
+
